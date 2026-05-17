@@ -1,0 +1,17 @@
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Backup files SPORK itself creates during collision flow
+*.bak
+
+# Test scratch dirs created during sample cycles
+sample-scratch/
+test-repo/
