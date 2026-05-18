@@ -72,11 +72,11 @@ No machine-specific paths leak into the deployed skill — everything is portabl
 
 ## Build phases
 
-This repo is in **Phase A** (initial draft + pivot complete, version `0.1.0`). It moves through:
+This repo is currently at **v0.9.1 — pre-stable, soaking before v1.0.0**. The build moves through three phases:
 
-1. **Phase A — Initial build.** Files exist; not yet exercised in real cycles. The pivot to a planning skill (with leverage assessment + plan.md + handoff) landed during the conversational rehearsal that followed the first commit.
-2. **Phase B — Sample cycles.** Run `/spork` against test scenarios, capture friction in `skills/spork/SAMPLES.md`, refine between cycles. Cycle 0 (conversational rehearsal) is logged; Cycle 1+ run against real targets.
-3. **Phase C — Promote to permanent.** Bump frontmatter to `1.0.0`, final self-critique, snapshot.
+1. **Phase A — Initial build.** Files exist; not yet exercised in real cycles. The pivot to a planning skill (with leverage assessment + plan.md + handoff) landed during the conversational rehearsal that followed the first commit. **Complete** as of cycle 0 + v0.1.0.
+2. **Phase B — Sample cycles.** Run `/spork` against test scenarios, capture friction in `skills/spork/SAMPLES.md`, refine between cycles. **Complete** through Cycle 2.5b (v0.9.0) and the v0.9.1 soft-item polish round.
+3. **Phase C — Promote to permanent.** Bump frontmatter to `1.0.0`, final self-critique, snapshot. **Pending soak time** on real (non-throwaway) repos.
 
 ## Iteration loop (Phase B)
 

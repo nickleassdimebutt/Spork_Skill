@@ -1,8 +1,8 @@
 # Default rubrics
 
-When discovery finds no prior ADRs/RFCs to infer from (cold repo) or the user can't articulate criteria, SPORK picks one of these five default rubrics based on the rough decision shape. Each is defensible from generic engineering principles and is meant as a *starting point* — the user is expected to tune the weights before marking `# Status: confirmed`.
+When discovery finds no prior ADRs/RFCs to infer from (cold repo) or the user can't articulate criteria, SPORK picks one of these six default rubrics based on the rough decision shape. Each is defensible from generic engineering principles and is meant as a *starting point* — the user is expected to tune the weights before marking `# Status: confirmed`.
 
-All five share the same scoring scale (1–5 with measurable anchors) and the same disqualifier conventions (auto-eliminating constraints that no amount of scoring can overcome).
+All six share the same scoring scale (1–5 with measurable anchors) and the same disqualifier conventions (auto-eliminating constraints that no amount of scoring can overcome).
 
 > **Digest first, defaults only when digest is silent.** SPORK never presents these default disqualifiers wholesale. The authoritative source for deal-breakers is `digest.key_constraints` (always populated when Phase 1.5 ran — the user already validated it via the picker). Defaults below are stand-ins for classes of constraint the digest didn't speak to (cost / compliance / fab / license / region / etc.). Every default that survives into the user-facing rubric carries an inline `(inferred — confirm or remove)` annotation so the user sees which ones SPORK is guessing at. **Never** present a default that contradicts the digest — drop it silently. See `SKILL.md` Phase 3 Step 3.1 for the sourcing order.
 
@@ -159,6 +159,36 @@ Use when: a refactor is being scoped, deciding how big a swing to take.
 
 ---
 
+## Rubric F — Identity / scope / framing (0th-order)
+
+Use when: the decision is what the project even is — what shipping looks like, what's in and out of scope, what "v1" means. Typical leverage points: *"Decide what this repo becomes"*, *"Pick the v1 promise"*, *"Frame the first investigation"*. Distinguishes itself from A–E by being PRE-product: there's nothing to score yet because the candidates ARE the framings.
+
+### Criteria (weights sum to 100)
+
+| Criterion                  | Weight | Description                                                         |
+|----------------------------|-------:|---------------------------------------------------------------------|
+| Clarity of v1 promise      |     30 | Can the user state in one sentence what shipping the framing looks like |
+| Disqualifier set sharpness |     20 | Do we know what this framing is NOT (cleanly excluded shapes)       |
+| Cost of being wrong        |     20 | If we pick this framing and pivot in 3 months, what's actually lost |
+| Personal energy fit        |     15 | Would the user pick it up daily without dread (durability check)    |
+| Feedback availability      |     15 | Can someone other than the user verify "yes, this works as framed"  |
+
+### Disqualifiers (inferred — confirm or remove)
+
+- Framing requires resources (time, money, hardware, people) the user has explicitly said they don't have.
+- Framing depends on a critical input the user can't produce or source (data, audience, partner).
+- Framing collapses to a known-unproductive shape ("rebuild X from scratch with no differentiator").
+
+### Scoring anchors
+
+- **Clarity of v1 promise** — 1: can't finish the sentence "shipping this looks like…"; 3: one sentence, but hand-wavy on the verbs; 5: one sentence, concrete verbs and one observable outcome.
+- **Disqualifier set sharpness** — 1: no exclusions named ("it could become anything"); 3: 1–2 vague exclusions; 5: 3+ clean exclusions the user would stand behind.
+- **Cost of being wrong** — 1: months of effort wasted, hard pivot required; 3: weeks of effort, soft pivot possible; 5: days of effort, easy pivot or salvageable.
+- **Personal energy fit** — 1: dreading day 2; 3: neutral / professional duty; 5: actively pulling toward it.
+- **Feedback availability** — 1: only the user can judge it; 3: a friend or one user could give signal; 5: clear external metric or a queue of people who'd respond.
+
+---
+
 ## Picking a rubric
 
-The skill's failure-mode (c) — criteria-blank user — drives this selection. If discovery gave no signal and the user can't articulate criteria, ask one narrow free-text question: *"What's the rough shape of the decision? (infra / library / architecture / vendor / refactor — or describe it)"* and match to A/B/C/D/E above. If the user picks "describe it", default to **Rubric C** (Architecture) because it's the most general and forces explicit reversibility scoring, which is what most ambiguous decisions actually hinge on.
+The skill's failure-mode (c) — criteria-blank user — drives this selection. If discovery gave no signal and the user can't articulate criteria, ask one narrow free-text question: *"What's the rough shape of the decision? (infra / library / architecture / vendor / refactor / identity-or-scope — or describe it)"* and match to A/B/C/D/E/F above. Pick F (Identity / scope / framing) when the leverage point is pre-product or 0th-order — *"decide what this repo becomes"*, *"pick the v1 promise"*, *"frame the first investigation"* are all F-shaped. If the user picks "describe it" and you can't tell whether it's F-shaped, default to **Rubric C** (Architecture) because it's the most general scoring rubric and forces explicit reversibility scoring, which is what most ambiguous in-flight decisions hinge on; only fall back to F when the leverage point is clearly pre-product.

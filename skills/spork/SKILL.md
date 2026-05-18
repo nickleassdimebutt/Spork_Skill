@@ -1,7 +1,7 @@
 ---
 name: spork
 description: SPORK installs a spike → converge decision toolkit into a target repo AND writes a tailored plan + handoff prompt for using it on your specific situation. Asks if you have a prior plan or context; if yes, digests it; if no, assesses the repo. Spawns a Plan subagent (two passes — digest, then leverage options) to surface the 5 highest-leverage, highest-mission-value ways SPORK can improve your success. Installs only the commands the picked leverage point leans on — demand-driven, not tier-picked. Writes .claude/spork/plan.md (a 3-section tiered roadmap anchored on the leverage point) and prints a handoff prompt for a fresh session. Use when the user wants to set up structured decision-making, asks "set up SPORK", "install spike workflow", "add the benchmark command", or has a planning artifact to operationalise. Re-runnable — additional commands install when new leverage points are picked.
-version: 0.9.0
+version: 0.9.1
 kind: prose
 ---
 
@@ -9,7 +9,7 @@ kind: prose
 
 You are running the SPORK skill. Your job is twofold: (1) install the subset of SPORK's 12 slash commands the user's situation actually needs, and (2) write a tailored plan + handoff prompt that anchors their next moves on a specific high-leverage decision.
 
-The interaction budget is **2 `AskUserQuestion` calls + 3 free-text prompts + per-file collision prompts**. Stay inside that budget. The user has said "doesn't require much of the user" — every prompt skipped when something can be inferred is a win.
+The interaction budget is **2 `AskUserQuestion` calls + 3 free-text prompts** in the planning phases (0 → 1.5). Phase 6's approval-gate `AskUserQuestion` and Phase 7's per-file collision prompts are write-time and counted separately — they're approvals on concrete drafts, not planning input. Stay inside the planning budget. The user has said "doesn't require much of the user" — every prompt skipped when something can be inferred is a win.
 
 UX tone is locked: novice-accessible, plain English, "you" voice, ≤10-word command blurbs. Framework jargon ("spike", "rubric", "schema", "disqualifier") stays inside reference docs and installed command bodies; surface prompts use plain equivalents ("study", "scoring sheet", "required-fields contract", "deal-breaker").
 
@@ -261,9 +261,15 @@ Then `Read`:
 
 Capture: did discovery find an ADR template? (For `{{adr_template_excerpt}}`, only used if `/adr` is in the install set.)
 
-### Synthesize a 5-bullet discovery report
+### Synthesize a discovery report
 
-Write to chat:
+**Cold short-circuit.** If discovery found ALL of: zero CLAUDE.md, zero ADR/RFC/decision files, zero spike docs, zero spike-flavored git history, AND no language indicator (truly empty repo or just a README), collapse to a one-liner instead of the 5-bullet template:
+
+> *"Discovery: cold — no decision history, no spike history, no language signals yet. Phase 3 will source deal-breakers from `digest.key_constraints` first."*
+
+That's the whole report in the cold case. Then proceed to Phase 3. Five "nothing found" bullets are ceremony — the digest is doing the real work in this branch.
+
+**Non-cold case — 5-bullet report.** When discovery surfaces at least one signal, write to chat:
 
 1. **Stack & conventions** — language(s), framework(s), notable CLAUDE.md instructions.
 2. **Decision-making style** — ADRs / RFCs / design docs / informal. If found, characterise the reasoning style in 2–3 sentences.
@@ -271,7 +277,7 @@ Write to chat:
 4. **Recurring deal-breakers** — what disqualified approaches in past decisions? (License, language, infra, compliance, deadline.) Bullet list.
 5. **Historical spike patterns** — branches, commits, docs found. What was inconsistent across them.
 
-If discovery is cold, say so explicitly per `references/failure-modes.md` (b).
+Bullets that genuinely found nothing in the non-cold case should still be terse — *"none found"* is enough; don't elaborate. The cold short-circuit exists specifically for the "every bullet would say none found" case; partial-cold still uses the 5-bullet structure so the user sees which dimensions have signal and which don't.
 
 ---
 
@@ -290,7 +296,7 @@ Derive the first criterion from `leverage_point_title`:
 
 For the remaining 3–4 criteria:
 - **If past ADRs/decisions exist:** infer recurring criteria from them. State which ADR each comes from.
-- **If cold:** pick a default rubric from `references/default-rubrics.md` matched to the leverage point's decision shape (infra / library / architecture / vendor / refactor). The default rubric provides remaining criteria; the leverage anchor is the user's specific first criterion.
+- **If cold:** pick a default rubric from `references/default-rubrics.md` matched to the leverage point's decision shape (infra / library / architecture / vendor / refactor / identity-or-scope). The default rubric provides remaining criteria; the leverage anchor is the user's specific first criterion. Use **Rubric F (Identity / scope / framing)** when the leverage point is pre-product or 0th-order ("decide what this repo becomes", "pick the v1 promise", "frame the first investigation") — A–E all assume there's something concrete to score, F scores the framing itself.
 
 **Deal-breakers — digest first, defaults only when digest is silent.** Source deal-breakers in this order:
 
@@ -351,7 +357,7 @@ For each command in `install_set`, extract its template and substitute slots:
 | Slot                          | Value                                                          |
 |-------------------------------|----------------------------------------------------------------|
 | `{{repo_name}}`               | Basename of target repo path.                                  |
-| `{{primary_language}}`        | Discovered language (`polyglot` if mixed).                     |
+| `{{primary_language}}`        | Discovered language (`polyglot` if mixed; `not yet established` if the repo has no source files yet). Use the `not yet established` literal — it reads cleanly in CONSTRAINTS.md and similar surfaces, where "unspecified" or "none" parse as broken substitutions. |
 | `{{adr_path}}`                | Repo-relative ADR dir (e.g. `docs/adr/`) or `none`.            |
 | `{{adr_template_excerpt}}`    | Captured ADR template or empty (forces MADR-lite fallback).    |
 | `{{spike_root}}`              | `spikes/` (or `docs/spikes/` if that dir already exists).      |
@@ -380,13 +386,27 @@ Walk `references/critique-checklist.md` — all 7 questions. For each:
 
 **Q6 (leverage anchor in rubric)** and **Q7 (leverage in plan section 1)** are mechanical substring checks. Q7 cannot run yet (no plan.md drafted) — note it as `Q7: DEFERRED — checked at Phase 8 render time.`
 
-Surface all 7 verdict lines to the user before the approval gate.
+**Re-run scope.** Phase 6 classifies each install-set draft as NEW / CHANGED / IDENTICAL against on-disk state. On re-runs (`N_identical ≥ 1`), the critique re-runs Q1–Q7 only against the union of NEW + CHANGED drafts. IDENTICAL drafts inherit the prior run's verdicts — re-running the same 7 questions against byte-identical content is wasted work and produces noise in the surface. The full-walk behavior is preserved for first installs (no prior verdicts to inherit). Surface verdict lines for NEW + CHANGED drafts; note `Q1–Q7 inherited from prior run for <IDENTICAL names>` if any drafts skipped.
+
+Surface the in-scope verdict lines to the user before the approval gate.
 
 ---
 
 ## Phase 6 — Approval gate (`AskUserQuestion`)
 
-Show:
+### Step 6.1 — First-install vs re-run detection
+
+Before composing the approval surface, compute the **delta** against on-disk state. For each command in this run's install set, classify it as:
+
+- **NEW** — file doesn't exist on disk yet.
+- **CHANGED** — file exists, content differs from the in-memory draft.
+- **IDENTICAL** — file exists, content is byte-identical to the in-memory draft (silent-skip target).
+
+Let `N_new`, `N_changed`, `N_identical` be the counts. The run is a **first install** when `N_identical == 0` AND no `<target>/.claude/spork/plan.md` exists; otherwise a **re-run**.
+
+### Step 6.2 — Compose the approval surface (branches on run shape)
+
+**First-install surface** — show the full recap (the user has no prior context to lean on):
 - The discovery report (recap).
 - The picked leverage point + digest (recap).
 - The confirmed rubric (recap).
@@ -394,17 +414,28 @@ Show:
 - The self-critique verdicts (7 lines).
 - A **table of contents** of the drafts (command name + 1-line frontmatter description), NOT the full bodies.
 
-Then `AskUserQuestion`:
+**Re-run surface** — surface the *delta* and skip the full recap (the recap is repetitive when most files are byte-identical and the user already has plan.md from a prior run):
+- One-line delta summary: *"Re-run against existing install. <N_identical> of <N_total> install-set files are byte-identical to disk; <N_changed> changed (<comma-separated names>); <N_new> new (<comma-separated names>)."*
+- Picked leverage point + 1-line digest (just for context — not the full 4-field digest).
+- Self-critique verdicts re-run **only on CHANGED + NEW** drafts (IDENTICAL drafts inherit the prior run's verdicts; SPORK notes *"Q1–Q7 inherited from prior run for <comma-separated IDENTICAL names>"*).
+- Table of contents of CHANGED + NEW drafts only.
+
+If `N_changed == 0 AND N_new == 0` (re-run with everything byte-identical), surface *"No new drafts to review; all install-set commands already on disk and byte-identical."* and skip the `AskUserQuestion` entirely — proceed to Phase 7 (which will silent-skip all writes). This is the Skip-leverage no-op path generalised to also cover non-Skip re-runs that happen to produce no changes.
+
+### Step 6.3 — Approval `AskUserQuestion`
 
 Question: *"Drafts look good — ready to write?"*
 
 Options:
 - *Write all* — proceed to Phase 7.
 - *Show one draft by name* — re-prompt the user for which command's body to display (free-text); show only that one; re-ask.
-- *Let me edit a draft inline first* — re-prompt for which command + what to change; apply edits; re-render that one; re-ask.
+- *Let me edit a draft inline first* — re-prompt for which command + what to change; apply edits; re-render that one (which may flip its delta classification); re-ask.
 - *Abort* — stop without writing.
 
+In the re-run branch, *"Show one draft by name"* should default the user toward the CHANGED + NEW set — name those explicitly in the surface so the user knows which drafts are worth reviewing.
+
 (Cycle 0 friction fix: the original "Show me the bodies again" dumped all chosen drafts. Replaced with a named, on-demand option to avoid scroll fatigue.)
+(v0.9.1 friction fix: re-runs surface delta + skip full recap; critique re-runs only on changed drafts. Addresses Cycle 2 soft item #10.)
 
 ---
 

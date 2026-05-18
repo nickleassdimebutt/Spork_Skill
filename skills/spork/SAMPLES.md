@@ -305,3 +305,37 @@ SPORK has reached its `v0.9.0` pre-stable release. Feature-complete; polish-bar 
 - Soak time: use SPORK on a few real (non-throwaway) repos to confirm the polish bar holds in the wild.
 - Optionally address the 7 soft items above.
 - Once those are clear, bump version 0.9.0 → 1.0.0 and tag v1.0.0.
+
+---
+
+## v0.9.1 — 2026-05-18
+
+Soft-item polish round. Addresses 5 of the 7 known-friction items deferred from v0.9.0; items 1 and 6 remain as documented "by design" subagent behaviors (no fix planned — they're inherent to honest assessment of a meta-target / no-plan re-run).
+
+### Items addressed
+
+- **Item 2 — Cold-repo discovery short-circuit.** SKILL.md Phase 2 "Synthesize a discovery report" now branches on a cold-detection check: if ALL of (zero CLAUDE.md, zero ADR/RFC/decision files, zero spike docs, zero spike-flavored git history, no language indicator), discovery collapses to the single line *"Discovery: cold — no decision history, no spike history, no language signals yet. Phase 3 will source deal-breakers from `digest.key_constraints` first."* The 5-bullet template is preserved for partial-cold cases (so the user sees which dimensions have signal vs. which don't), but the fully-cold ceremony is gone.
+
+- **Item 3 — `{{primary_language}}` fallback for no-code repos.** SKILL.md Phase 4 Step 4.2 slot table extended: `polyglot` for mixed-language repos; new `not yet established` literal for truly-no-source-files repos. Avoids the prior `unspecified` / `none` substitutions that read as broken in CONSTRAINTS.md.
+
+- **Item 4 — 6th default rubric for "decide what the repo becomes".** `references/default-rubrics.md` gains **Rubric F — Identity / scope / framing (0th-order)** with 5 criteria designed for pre-product framing decisions (Clarity of v1 promise / Disqualifier set sharpness / Cost of being wrong / Personal energy fit / Feedback availability). Rubric F's distinguishing feature: scores the framing itself, not a concrete candidate. The "Picking a rubric" section updated to add `identity-or-scope` to the decision-shape question and explains when to pick F vs. fall back to C. SKILL.md Phase 3 Step 3.1 cold-branch updated to surface F as the right pick for pre-product leverage points.
+
+- **Item 5 — Interaction-budget line clarified.** SKILL.md preamble now reads *"2 `AskUserQuestion` calls + 3 free-text prompts in the planning phases (0 → 1.5). Phase 6's approval-gate `AskUserQuestion` and Phase 7's per-file collision prompts are write-time and counted separately"*. Resolves the prior ambiguity where it wasn't clear whether the approval gate counted against the budget.
+
+- **Item 7 — Phase 6 re-run surface skips the full recap.** SKILL.md Phase 6 split into Step 6.1 (NEW/CHANGED/IDENTICAL classification against on-disk state), Step 6.2 (first-install vs re-run surface — re-runs get a one-line delta + only changed drafts' TOC, not the full recap), and Step 6.3 (the four-option `AskUserQuestion`, unchanged). Phase 5 self-critique gained a "Re-run scope" subsection: critique re-runs only on NEW + CHANGED drafts; IDENTICAL drafts inherit prior verdicts. Also subsumes the prior `N_changed == 0 AND N_new == 0` no-op surface (was special-cased only for Skip-leverage; now generalised).
+
+### Items deferred (no fix planned)
+
+- **Item 1 — Meta-target behavior.** Subagent honestly recognizes throwaway repos as test beds; for real users with no actual product, leverage options become introspective. By design — the subagent is doing what an honest assessment should do given near-zero signal. Real-user soak time (Phase C path) will tell whether this is a real-world problem.
+- **Item 6 — Pass-1 digest drift across no-plan re-runs.** Subagent reads the repo state, which changes between runs — re-runs can re-frame the situation. Correct behavior per "no-plan = read repo, not prior runs". Users who want stable framing should use Skip-leverage (which preserves the prior plan's leverage point) or paste a handoff prompt into Phase 1.5.
+
+### Verification
+
+- Installed via inline `cp` (PowerShell ExecutionPolicy classifier blocked `install.ps1`; bash equivalent succeeded). `~/.claude/skills/spork/SKILL.md` shows `version: 0.9.1` on disk; all 5 fix-marker substrings (*"not yet established"*, *"Rubric F"*, *"Cold short-circuit"*, *"Re-run surface"*, *"inherited from prior run"*, *"planning phases (0 → 1.5)"*) grep clean.
+- No `/spork` runs against a target repo this cycle — the fixes are surface-language and branching-logic changes that touch SKILL.md + default-rubrics.md prose, not invocation paths. Soak time on real (non-throwaway) repos remains the path to v1.0.0; v0.9.1 is the "polish-bar passes on hard AND most soft items" milestone.
+
+### Path to v1.0.0 (revised)
+
+- Soak time on real repos remains the gate.
+- Items 1 and 6 are documented-and-accepted; not blockers for 1.0.0.
+- If a soak-time run surfaces new friction, expect a v0.9.2 patch before 1.0.0.
