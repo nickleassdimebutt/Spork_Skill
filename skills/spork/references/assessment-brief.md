@@ -87,7 +87,7 @@ A "leverage option" is one high-impact, high-mission-value way SPORK's spike →
 - Has a short, plain-English title (≤8 words).
 - Is rationalised in 2 sentences naming the specific risk/gap/opportunity it addresses for this situation.
 - Lists which SPORK commands it leans on (subset of the 12 canonical names below).
-- Has a concrete, copy-pasteable first invocation for this user, with realistic arguments drawn from the digest.
+- Has a concrete, copy-pasteable first invocation for this user, with realistic arguments drawn from the digest. **The first_invocation must be runnable from the current repo state.** Commands that require an existing investigation or spike file — `/red-team`, `/converge`, `/spike-followup`, `/second-opinion`, `/scaffold-from-spike`, `/post-mortem-rubric` — cannot be the first move on a cold repo. If your leverage option leans on one of those downstream commands, set `first_invocation` to the bootstrap command (`/spike-init <question>` or `/spike <approach>`) that creates the prereq; the downstream command is still listed in `commands_leaned_on` so plan.md's "This week" section knows to include it later.
 
 SPORK's 12 canonical commands (you may only list these in commands_leaned_on, and first_invocation must reference one of them):
 

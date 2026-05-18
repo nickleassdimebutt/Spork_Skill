@@ -80,7 +80,7 @@ Refuse if $ARGUMENTS is empty or shorter than 8 characters. Tell the user: "Prov
        Repo: {{repo_name}}
        Primary language: {{primary_language}}
        
-       ## Recurring hard constraints discovered from {{adr_path}} and CLAUDE.md
+       ## Recurring hard constraints {{adr_discovery_clause}}
        
        {{repo_constraints_block}}
        

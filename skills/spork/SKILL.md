@@ -208,11 +208,23 @@ Append-only — do not overwrite prior sections.
 ### Step 1.5.7 — Skip-leverage branch
 
 If the user chose *Skip leverage assessment* in 1.5.1:
-- Do NOT spawn the subagent.
+- Do NOT spawn the subagent (no pass-1, no pass-2).
 - Do NOT write to `improvements.md`.
-- `Read` `<target>/.claude/spork/plan.md` and extract the prior leverage point from its "The leverage point we picked" section.
+- `Read` `<target>/.claude/spork/plan.md` and extract the prior leverage point title from its "The leverage point we picked" section.
 - Surface a one-line reminder: *"Continuing with prior leverage point: <title>."*
 - Proceed to Phase 2.
+
+**Downstream phase semantics in the Skip-leverage branch.** Skip is a refresh, not a re-install. The downstream phases behave as follows:
+
+- **Phase 2 (Discover):** runs normally. Discovery may surface new history since the prior run.
+- **Phase 3 (Rubric):** skipped. Reuse the prior plan.md's rubric (visible in the "Scoring sheet" section) verbatim. No new criteria, no re-confirmation prompt.
+- **Phase 4 (Install set):** install_set = `core` only (`/spike-init`, `/spike`, `/converge`). No new commands are added by Skip — re-runs are additive, and Skip means "don't add anything; just refresh the plan". Commands installed by prior runs stay on disk.
+- **Phase 5 (Self-critique):** walk the 7 questions against the on-disk drafts. Verdicts will typically be `PASS` for drafts that were already approved on a prior run; the critique still runs as a sanity check.
+- **Phase 6 (Approval gate):** if all install-set drafts are byte-identical to on-disk, surface *"No new drafts to review; all install-set commands already on disk and byte-identical."* Skip the four-option `AskUserQuestion` — proceed straight to Phase 7.
+- **Phase 7 (Write commands):** every install-set file will be byte-identical → silent skip on all. No collisions, no `.bak` files.
+- **Phase 8 (Write plan + handoff):** re-render plan.md and handoff.md using the on-disk plan.md's content (digest, rubric, deal-breakers all inherited) plus the current date. If the rendered content is byte-identical to the on-disk plan.md/handoff.md, the writes themselves silently skip; otherwise the date or any other refreshed field flips them.
+
+**No-op surface (per Step 8.6):** if a Skip-leverage run produces zero writes, Step 8.6's final summary makes that explicit.
 
 ### Bundle for downstream phases
 
@@ -349,6 +361,8 @@ For each command in `install_set`, extract its template and substitute slots:
 | `{{schema_body}}`             | Verbatim `references/schema-template.md`, with `{{rubric_criteria_list}}` substituted. |
 | `{{leverage_anchor_criterion}}` | The first rubric criterion (derived from the leverage point). |
 | `{{leverage_point_title}}`    | The picked leverage point title.                               |
+| `{{adr_discovery_clause}}`    | Derived. If `{{adr_path}}` ≠ `none`: `discovered from \`{{adr_path}}\` and CLAUDE.md`. If `{{adr_path}}` == `none`: `inferred from CLAUDE.md (no ADR directory found)`. Avoids rendering the literal word "none" in user-facing prose. |
+| `{{scope_adr_scan_step}}`     | Derived. If `{{adr_path}}` ≠ `none`: `` - `Glob` `{{adr_path}}*.md` and read the 5 most recent.``. If `{{adr_path}}` == `none`: `- (No ADR directory configured — skip this step.)`. |
 
 Commands NOT in the install set are NOT drafted. They'll be listed in `plan.md`'s deferred sections with re-install instructions.
 
@@ -451,9 +465,9 @@ Read `references/plan-template.md` for the template structure. Substitute slots:
 - `{{leverage_point_title}}` — the picked leverage point.
 - `{{digest_situation}}`, `{{digest_goal}}`, `{{digest_key_constraints}}`, `{{digest_success}}` — from the validated pass-1 digest.
 - `{{this_week_invocations}}` — 2–4 numbered concrete invocations using only the install set, anchored on the picked leverage option's `first_invocation`. (See `references/plan-template.md` § "How each block is composed" for the format.)
-- `{{when_you_hit_x_block}}` — bulleted entries, one per UNinstalled command that has a pain trigger applicable here. Each entry: command name + pain trigger from `usage-order.md` + concrete re-install instruction.
-- `{{months_from_now_block}}` — same as above for situational deferred commands.
-- `{{install_set_block}}` — bulleted list of installed commands with their frontmatter descriptions.
+- `{{when_you_hit_x_block}}` — bulleted entries, one per command **not on disk** (i.e. not in `<target>/.claude/commands/` after this run's writes) that has a pain trigger applicable here. Each entry: command name + pain trigger from `usage-order.md` + concrete re-install instruction. A command installed by a *prior* `/spork` run is on disk and does NOT belong here.
+- `{{months_from_now_block}}` — same as above for situational deferred commands. Same on-disk filter.
+- `{{install_set_block}}` — bulleted list of every command **on disk** in `<target>/.claude/commands/` after this run's writes, with their frontmatter descriptions. The on-disk set = Phase 1's detected installed set ∪ this run's new writes. Source of truth is the disk, not just this run's install-set computation.
 - `{{rubric_summary}}` — compact restatement of the rubric, or instructions to create one via `/spike-init` if no investigation exists yet.
 - `{{repo_constraints_block}}` — deal-breakers.
 
@@ -462,8 +476,8 @@ Read `references/plan-template.md` for the template structure. Substitute slots:
 Before writing, verify:
 1. No literal `{{` substrings remain in the rendered output.
 2. The substring `To deliver on <leverage_point_title>: here's the order:` appears verbatim. This is what makes critique-checklist Q7 mechanically passable. Run Q7 at this point — it should PASS now.
-3. `{{install_set_block}}` lists exactly the commands SPORK is about to write (or just wrote in Phase 7) — no skew.
-4. `{{when_you_hit_x_block}}` and `{{months_from_now_block}}` mention only UNinstalled commands.
+3. `{{install_set_block}}` lists exactly the commands ON DISK in `<target>/.claude/commands/` after this run's writes — i.e. Phase 1's detected installed set ∪ this run's new writes. No skew.
+4. `{{when_you_hit_x_block}}` and `{{months_from_now_block}}` mention only commands NOT on disk after this run. A command installed by a prior run is on disk; do not list it as if it needs re-installing.
 
 If any check fails: abort the write, surface the failing check, do not produce a half-rendered plan.
 
@@ -495,11 +509,20 @@ Output the rendered handoff content verbatim to chat, with a header line:
 
 ### Step 8.6 — Final summary
 
-Print:
+Track the count of *actual writes* across Phases 7 and 8 (a "write" = a `Write` call that materially changed bytes; a byte-identical silent skip does NOT count). Then:
+
+**If ≥1 file was written this run** (the normal case), print:
 - Paths of all artifacts written: `commands/` files, `spikes/README.md` (if first install), `.claude/spork/plan.md`, `.claude/spork/handoff.md`, `.claude/spork/improvements.md`.
 - The first command to run with its example arguments (= `{{first_invocation}}`).
-- Count: *"Installed <N> commands; <12-N> deferred to plan.md."*
+- Count: *"Installed <N> commands; <12-N> deferred to plan.md."* (where N counts ON-DISK commands, not just this run's new writes).
 - One-line reminder: *"Re-run `/spork` here with a new leverage point to install additional commands when their pain triggers."*
+
+**If zero files were written this run** (Skip-leverage refresh with no upstream change, or a re-run that produced byte-identical content), print instead:
+- *"No changes — refresh was a no-op. Your prior plan still applies."*
+- Path to the existing plan.md (so the user can re-open it if they want).
+- *"Re-run `/spork` here with a new or different leverage point if you want to extend the install set or pivot the plan."*
+
+The no-op acknowledgment is what tells the user the run *intentionally* didn't write anything, vs. silently failing.
 
 ---
 

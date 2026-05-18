@@ -131,7 +131,7 @@ Format: bulleted list of long-horizon situational commands. Each entry names the
 
 ### `{{install_set_block}}`
 
-Format: bulleted list of every command installed in this run. One-line blurb per command pulled from its `description` frontmatter:
+Format: bulleted list of every command **on disk** in `<target>/.claude/commands/` after this run's writes complete. Re-runs are additive — commands installed by prior runs stay in the list even if this run's leverage point didn't lean on them. One-line blurb per command pulled from its `description` frontmatter:
 
 ```markdown
 - `/spike-init` — Start a decision: define the question and how options will be judged.
@@ -140,6 +140,8 @@ Format: bulleted list of every command installed in this run. One-line blurb per
 - `/enumerate` — Brainstorm options up front so you don't miss any.
 - `/benchmark` — Replace guesses with real measurements (speed, cost).
 ```
+
+The on-disk set is the source of truth — it's what the user can actually invoke. A prior run's command stays available; plan.md should reflect that.
 
 ### `{{rubric_summary}}`
 
@@ -161,7 +163,7 @@ Before SPORK writes the rendered plan.md, it verifies:
 
 1. **Slot fill check.** Every `{{slot}}` is substituted; no literal `{{` substrings remain in the output. If any survive, abort the write and surface the unfilled slot list.
 2. **Leverage-point-in-section-1 check.** The literal string `To deliver on {{leverage_point_title}}: here's the order:` (with the slot substituted) appears in the rendered output. This is what makes critique-checklist Q7 mechanically passable.
-3. **Install-set consistency check.** The list of commands in `{{install_set_block}}` matches exactly the commands SPORK is about to write in Phase 7. No skew.
-4. **`when_you_hit_x_block` does not list any installed command.** Substring check: every command name in this block is NOT in the install set.
+3. **Install-set consistency check.** The list of commands in `{{install_set_block}}` matches exactly the commands ON DISK in `<target>/.claude/commands/` after this run's writes (this is the set Phase 1 detected, plus this run's new writes). No skew.
+4. **`when_you_hit_x_block` does not list any installed command.** Substring check: every command name in this block is NOT in the on-disk install set (same set used by check 3 above). A command installed by a prior run is still installed — it does not belong in `when_you_hit_x_block`.
 
 If any check fails, SPORK aborts the write and surfaces the failure. The plan.md never lands in a half-rendered state.

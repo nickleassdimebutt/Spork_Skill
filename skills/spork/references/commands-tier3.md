@@ -22,7 +22,7 @@ This command runs *before* `/spike-init`. Its job is to kill bad investigations 
 
 Run these in parallel:
 
-- `Glob` `{{adr_path}}*.md` (if `{{adr_path}}` is not `none`) and read the 5 most recent.
+{{scope_adr_scan_step}}
 - `Glob` `{{spike_root}}*/RECOMMENDATION.md` and read any RECOMMENDATIONs from the last 6 months.
 - `Grep` git log for terms from $ARGUMENTS, last 200 commits.
 - `Read` CLAUDE.md if present.

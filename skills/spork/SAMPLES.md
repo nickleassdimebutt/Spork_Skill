@@ -220,10 +220,24 @@ Hard polish-bar violations (per the user-stated bar): items **3, 8, 9, 11, 12**.
 
 Soft friction (improvements but not bar-violating): items 1, 2, 4, 5, 6, 7, 10.
 
-### Refinements applied
+### Refinements applied (Cycle 2.5)
 
-- _(filled after Cycle 2.5 round if the user wants it; or deferred per user decision)_
+- **Fix #3 (template ugliness when `adr_path == none`).**
+  - SKILL.md Phase 4 Step 4.2 slot table: added two derived slots — `{{adr_discovery_clause}}` (substitutes to *"discovered from \`<adr_path>\` and CLAUDE.md"* or *"inferred from CLAUDE.md (no ADR directory found)"* based on adr_path) and `{{scope_adr_scan_step}}` (substitutes to the glob step or to *"(No ADR directory configured — skip this step.)"*).
+  - `references/commands-tier1.md` /spike-init template: CONSTRAINTS.md heading now reads `## Recurring hard constraints {{adr_discovery_clause}}`.
+  - `references/commands-tier3.md` /scope template: ADR-scan bullet now reads `{{scope_adr_scan_step}}` instead of the awkward conditional.
+
+- **Fix #8 (subagent first_invocation referencing future state).** `references/assessment-brief.md` pass-2 brief: added an explicit rule that `first_invocation` must be runnable from the current repo state. Downstream commands (`/red-team`, `/converge`, `/spike-followup`, `/second-opinion`, `/scaffold-from-spike`, `/post-mortem-rubric`) cannot be the first move on a cold repo — the subagent must set `first_invocation` to the bootstrap command (`/spike-init` or `/spike`) instead, while still listing the downstream command in `commands_leaned_on`.
+
+- **Fix #9 (install_set_block / when_you_hit_x_block use on-disk set).**
+  - `references/plan-template.md` `{{install_set_block}}` section: composition explicitly reads from `<target>/.claude/commands/` after this run's writes (Phase 1's detected set ∪ this run's new writes). Re-runs are additive; prior-run commands stay in the list.
+  - Same file mechanical checks 3 + 4: both now reference the on-disk set, not just this-run's set.
+  - SKILL.md Phase 8 Step 8.1 + Step 8.2: matched updates.
+
+- **Fix #11 (Skip-leverage silent no-op).** SKILL.md Phase 8 Step 8.6: branches the final-summary print on whether ≥1 file was actually written. If zero writes happened, surface *"No changes — refresh was a no-op. Your prior plan still applies."* explicitly.
+
+- **Fix #12 (Skip-leverage flow underspec'd for Phases 3-8).** SKILL.md Step 1.5.7: added explicit "Downstream phase semantics in the Skip-leverage branch" section spelling out behavior at Phases 2-8: Phase 3 skipped (reuse prior rubric), Phase 4 install_set = core only, Phase 5 critique still runs, Phase 6 surfaces "no new drafts" and skips the AskUserQuestion, Phase 7 silent skips on all, Phase 8 re-renders plan.md/handoff.md (typically byte-identical → no-op).
 
 ### Verdict
 
-- **HOLD before v1.0.0** — recommend a Cycle 2.5 round addressing the 5 hard polish-bar items (3, 8, 9, 11, 12). The 7 soft items can ship as known-friction in a v1.0.x patch. Defer to user.
+- **READY for v1.0.0 promotion.** All 5 hard polish-bar violations addressed in Cycle 2.5. The 7 soft items (1, 2, 4, 5, 6, 7, 10) remain as known-friction; can be addressed in a v1.0.x patch or deferred to v2.
