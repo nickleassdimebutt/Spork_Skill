@@ -138,3 +138,92 @@ These design decisions exit the "flags to fix" status and enter the locked-desig
 ---
 
 ## Cycle 1b — Skipped — superseded by real Cycle 2 against spork-cycle2-cold-test.
+
+---
+
+## Cycle 2 — Real install + 3 runs against cold-test target — 2026-05-17
+
+**Target repo:** `C:\Users\nicho\GitHub\spork-cycle2-cold-test` (created fresh: `git init` + one-line README)
+**Pre-state:** Run 1 — fully cold; Run 2 — Run 1's artifacts; Run 3 — Run 2's artifacts.
+**Goal:** real `/spork` invocation (actual subagent calls, actual file writes). Three runs to exercise NO-plan, picker-re-run + collision, Skip-leverage. Probe the unexercised paths from Cycles 1a/1b.
+
+### Run 1 — NO-plan branch, exercise Phase 6 "Show one draft by name"
+
+**User inputs:** target path → `Enter a path`; Phase 1.5.1 → `No — start from this repo as-is`; Phase 1.5.5 picker → `A` (option [A] *"Decide what this repo becomes"*, `commands_leaned_on = [/spike-init, /scope]`); Phase 3 rubric → `accept`; Phase 6 → `Show one draft by name` → `/scope` → re-ask → `Write all`.
+
+**Subagents:** real Plan agents. Pass 1 returned a 4-key digest framing the repo as a SPORK cold-start test bed; pass 2 returned 5 leverage options + 9 alternatives + `recommended_index: 0`. Both passes validated mechanically (parse + key check) on first try.
+
+**Install set:** `[/converge, /scope, /spike, /spike-init]` (4 commands; 8 deferred).
+
+**Artifacts landed:** `.claude/commands/{converge,scope,spike,spike-init}.md`, `spikes/README.md`, `.claude/spork/{plan.md, handoff.md, improvements.md}`. Phase 8 mechanical checks all pass: no `{{` slots, `To deliver on Decide what this repo becomes: here's the order:` substring present (Q7 PASS), install-set-block matches writes, `when_you_hit_x_block`/`months_from_now_block` only list uninstalled commands.
+
+### Run 2 — Different leverage point (picker re-run + collision flow)
+
+**User inputs:** Phase 1.5.1 → `No` (Skip-leverage was visible but unused this run); Phase 1.5.5 → `D` (option [D] *"Red-team the chosen spike findings"*, `commands_leaned_on = [/red-team, /converge]`); Phase 3 → `accept`; Phase 6 → `Write all`; Phase 7 per-file collision → `Overwrite (back up to .bak.2026-05-17)` for `/spike-init.md`.
+
+**Subagents:** real, fresh pass 1 + pass 2. Pass 1 produced a DIFFERENT digest from Run 1 (reframed around "exercise SPORK's toolkit"); pass 2 returned a different leverage slate.
+
+**Install set:** `[/converge, /red-team, /spike, /spike-init]`. Phase 7 collision behavior on the 4 install-set members:
+- `/converge.md`: byte-identical (only `repo_name` + `spike_root` slots, unchanged) → silent skip ✓
+- `/spike.md`: byte-identical → silent skip ✓
+- `/spike-init.md`: content differs (new rubric + deal-breakers + criteria list) → collision picker fires; backed up to `spike-init.md.bak.2026-05-17`; overwritten with new content ✓
+- `/red-team.md`: new file → write ✓
+
+**Plan.md/handoff.md:** re-rendered with new leverage point. `improvements.md` got a new dated section appended (per "additive — do not overwrite prior sections" rule).
+
+### Run 3 — Skip-leverage
+
+**User inputs:** Phase 1.5.1 → `Skip leverage assessment` (now visible because plan.md exists).
+
+**Subagent calls:** zero (per Phase 1.5.7 — Skip branch does not spawn the subagent).
+**improvements.md writes:** zero ✓ (per Phase 1.5.7).
+**File changes:** zero. All command-set files byte-identical to on-disk → silent skip; plan.md/handoff.md identical (same digest extracted from existing plan.md + same date) → silent no-op.
+
+Confirmed by file timestamps unchanged from Run 2.
+
+### Interaction friction (12 findings)
+
+1. **Subagent honestly recognizes meta-targets, leverage options become introspective.** Run 1's pass-1 digest correctly framed the repo as a SPORK test bed (because it is); pass-2 leverage options were all meta-toolkit-introspective ("Stress-test the no-plan path", "Bootstrap the .claude scaffolds"). For a real user with a real nascent project — not a SPORK test — this would feel weird. Probably no fix needed; the subagent is doing what an honest assessment should do given near-zero signal. But worth knowing for the polish bar: SPORK works less well when the target has no actual product.
+
+2. **5-bullet discovery report on a fully cold repo is ceremony.** Each bullet read "nothing found". A one-liner ("Discovery: cold — no decision history, no language tools, no spike history. Phase 3 will source deal-breakers from digest first.") would be tighter and equally honest. *Candidate refinement to SKILL.md Phase 2.*
+
+3. **`{{adr_path}}` → `none` produces visible template ugliness.** In the rendered `/scope.md`, the line `Glob \`none*.md\` (if \`none\` is not \`none\`)` appears verbatim. The conditional makes the glob a no-op, but the literal "none" reads as a broken substitution. Also in `/spike-init.md`'s CONSTRAINTS.md template: `Recurring hard constraints discovered from none and CLAUDE.md`. *Candidate refinement: either drop the conditional line entirely when `adr_path` is `none`, or render it as `(no ADR directory configured)`.*
+
+4. **No path for "no language yet" in `{{primary_language}}`.** SKILL.md Phase 4 Step 4.2 says `polyglot if mixed` but doesn't address truly-no-code. I used `unspecified`, which renders as `Primary language: unspecified` in CONSTRAINTS.md. *Candidate refinement: add `unspecified` or `none yet` as an explicit fallback in SKILL.md.*
+
+5. **None of the 5 default rubrics fit a 0th-order "deciding what to commit to" leverage point.** Decision-shape categories (infra/library/architecture/vendor/refactor) don't span "decide the repo identity" or similar pre-product leverage points. I picked Rubric C (architecture) as the least-bad. *Candidate refinement: add a 6th default rubric "decision-shape: identity / scope / framing" to `default-rubrics.md` — or expand Rubric C's preamble to cover pre-product scoping.*
+
+6. **Budget-line ambiguity: "2 AskUserQuestion + 3 free-text" doesn't say whether write-time prompts count.** Phase 6 approval gate uses a 3rd `AskUserQuestion`; Phase 7 collisions use them per-file. Are these counted? My interpretation: budget covers Phase 0 → 1.5 (planning phases) only; write-time prompts are separate. *Candidate refinement: SKILL.md top-line should explicitly say "in the planning phases (0 → 1.5); write-time prompts at Phase 6/7 are counted separately."*
+
+7. **Pass-1 digest drifts across runs.** Run 1 framed around "validate SPORK Cycle 2"; Run 2 framed around "exercise SPORK's toolkit on a representative situation". The subagent reads the repo from scratch in no-plan mode and doesn't see prior plan.md, so prior leverage decisions don't carry forward. *Probably correct behavior per "no-plan = read repo, not prior runs". But worth flagging — re-runs in no-plan mode can re-frame the situation.*
+
+8. **Subagent suggests `first_invocation` referencing future state.** Run 2's option [D] had `first_invocation: /red-team 2026-05-17-scripted-walkthrough` — references a spike slug that doesn't exist yet. Plan-template's "first entry verbatim" rule renders an unrunnable step-1 in plan.md. I added a `Prereq:` note inline as a workaround, but the underlying issue is that the subagent reasons forward without sequencing-checking the first_invocation. *Candidate refinement to `assessment-brief.md` pass 2: add validation rule "first_invocation must be runnable as step 1 — no references to future investigation slugs / spike files". Or: SKILL.md Phase 8 detects this and re-orders.*
+
+9. **`{{install_set_block}}` lists this-run's set, not on-disk set.** Run 1 installed `/scope`; Run 2's install set didn't include `/scope`; Run 2's plan.md "Installed commands" excluded `/scope` even though `scope.md` is still on disk. I worked around it with an inline note. *Candidate refinement to plan-template.md `{{install_set_block}}` composition: list ON-DISK commands, not just this-run's writes. Mechanical check 3 needs to be re-phrased accordingly.*
+
+10. **Phase 6 approval gate's TOC + recap is fine for first install but feels heavy for re-runs.** On Run 2 the user already approved core 3 in Run 1; surfacing the same TOC + recap + critique verdicts again is repetitive when 3 of 4 files are byte-identical. *Candidate refinement: Phase 6 should say "3 of 4 install-set files are byte-identical to prior install; 1 file changed (`/spike-init.md`). Ready to write?" — surfacing what's actually changing.*
+
+11. **Skip-leverage on same-day re-run is a complete no-op.** Phase 0 → 8 all ran; nothing wrote. Polish bar: SPORK should surface "Skip-leverage refresh found no changes — your prior plan still applies." explicitly, so the user knows the run was diagnostic only. *Candidate refinement to SKILL.md Phase 8.6 (final summary): when no files changed, emit "No changes — refresh was a no-op."*
+
+12. **Skip-leverage flow underspecified for Phases 3-4.** SKILL.md Step 1.5.7 says "Proceed to Phase 2" but Phase 3 (rubric synthesis), Phase 4 (install-set computation), and Phase 8 (plan.md re-render) all depend on having a leverage-point's `commands_leaned_on` — which Skip-leverage doesn't recover (it only extracts the title). I interpreted Skip as: install_set = core only, reuse prior rubric, re-render plan.md from prior plan.md content. *Candidate refinement: SKILL.md Step 1.5.7 should spell out: "Skip-leverage skips Phases 3 + 4 (no new rubric, no new install). Phase 8 re-renders plan.md using the on-disk content + current date. Phase 7 writes are silent skip (everything byte-identical)."*
+
+### Polish-bar verdict
+
+**Mostly polished, with friction items worth a Cycle 2.5 round before v1.0.0.**
+
+Hard polish-bar violations (per the user-stated bar): items **3, 8, 9, 11, 12**.
+- Item 3 = visible ugly substitution in user-facing files (jargon-light bar fails).
+- Item 8 = SPORK surfaces an unrunnable command in plan.md (says it'll do X, X fails).
+- Item 9 = plan.md says a command isn't installed when it IS (says-vs-does mismatch).
+- Item 11 = silent no-op without acknowledgment (UX feel).
+- Item 12 = a documented user-facing branch is underspecified.
+
+Soft friction (improvements but not bar-violating): items 1, 2, 4, 5, 6, 7, 10.
+
+### Refinements applied
+
+- _(filled after Cycle 2.5 round if the user wants it; or deferred per user decision)_
+
+### Verdict
+
+- **HOLD before v1.0.0** — recommend a Cycle 2.5 round addressing the 5 hard polish-bar items (3, 8, 9, 11, 12). The 7 soft items can ship as known-friction in a v1.0.x patch. Defer to user.
