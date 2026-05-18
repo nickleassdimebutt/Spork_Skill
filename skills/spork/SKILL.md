@@ -9,7 +9,7 @@ kind: prose
 
 You are running the SPORK skill. Your job is twofold: (1) install the subset of SPORK's 12 slash commands the user's situation actually needs, and (2) write a tailored plan + handoff prompt that anchors their next moves on a specific high-leverage decision.
 
-The interaction budget is **3 `AskUserQuestion` calls + 2 free-text prompts + per-file collision prompts**. Stay inside that budget. The user has said "doesn't require much of the user" — every prompt skipped when something can be inferred is a win.
+The interaction budget is **2 `AskUserQuestion` calls + 3 free-text prompts + per-file collision prompts**. Stay inside that budget. The user has said "doesn't require much of the user" — every prompt skipped when something can be inferred is a win.
 
 UX tone is locked: novice-accessible, plain English, "you" voice, ≤10-word command blurbs. Framework jargon ("spike", "rubric", "schema", "disqualifier") stays inside reference docs and installed command bodies; surface prompts use plain equivalents ("study", "scoring sheet", "required-fields contract", "deal-breaker").
 
@@ -17,7 +17,7 @@ UX tone is locked: novice-accessible, plain English, "you" voice, ≤10-word com
 
 1. **Phase 0 — Preflight** — confirm target repo (1 AskUserQuestion).
 2. **Phase 1 — Detect existing install** — what's already installed, including prior `plan.md`.
-3. **Phase 1.5 — Plan check + leverage assessment** — ask whether the user has prior context; Plan subagent runs in two passes (digest, then leverage options) returning structured YAML; user picks one or more leverage points or describes their own. (1 AskUserQuestion + 1 free-text if yes + 1 AskUserQuestion multi-select with escape hatch.)
+3. **Phase 1.5 — Plan check + leverage assessment** — ask whether the user has prior context; Plan subagent runs in two passes (digest, then leverage options) returning structured YAML; user picks one or more leverage points or describes their own. (1 AskUserQuestion + 1 free-text if yes + 1 free-text numbered-list picker.)
 4. **Phase 2 — Discover** — read the repo's decision history (parallel, inline), informed by the picked leverage point.
 5. **Phase 3 — Synthesize rubric + confirm** — propose criteria with the leverage point anchored as criterion 1 via the `{{leverage_anchor_criterion}}` slot (1 free-text).
 6. **Phase 4 — Compute install set + draft commands** — install set = union of `commands_leaned_on` across picked leverage options; draft only those command files.
@@ -126,9 +126,9 @@ Returns YAML conforming to the `leverage` schema in `references/assessment-outpu
 
 On failure: retry pass 2 once. **The pass-1 digest is preserved** — it doesn't get re-rolled. If the retry also fails, surface the error and offer (a) Skip leverage assessment OR (b) describe-my-own (drops directly into the escape-hatch flow).
 
-### Step 1.5.5 — Present the picker (`AskUserQuestion` #3, multi-select)
+### Step 1.5.5 — Present the picker (free-text numbered-list)
 
-Surface the digest, then the 5 leverage options, then the recommendation:
+Surface the digest, then the 5 leverage options + escape, then the recommendation. The block below is what the user sees — render it verbatim with slot substitutions:
 
 ```
 ## Where SPORK can have the highest impact for you
@@ -152,21 +152,33 @@ Surface the digest, then the 5 leverage options, then the recommendation:
   [D]  ...
   [E]  ...
 
+  [F]  None of these fit — let me describe my own.
+
 Recommended: start with [<letter corresponding to recommended_index>].
 
-Pick one or more to commit to (multi-select). The unpicked options go to
+Pick one or more to commit to. The unpicked options go to
 .claude/spork/improvements.md for future SPORK sessions to revisit.
 ```
 
-Use `AskUserQuestion` with `multiSelect: true`. Options:
-- `[A] <title>`, `[B] <title>`, ..., `[E] <title>` (each with `description` = the option's rationale truncated to ≤120 chars).
-- `None of these fit — let me describe my own` (the **escape hatch**).
+Then prompt the user via free-text:
 
-If the user picks the escape hatch: free-text prompt — *"In your own words, what's the highest-leverage move SPORK can make on this situation? (1 sentence title.)"* The user's text becomes the leverage point title. Then ask: *"Which of these 12 commands does your leverage point lean on? Comma-separate them, or say `all`, `core`, or list specific ones."* Parse against the 12 canonical names; re-prompt on invalid entries.
+*"Type letters for the option(s) you want — e.g. `A`, `A, C`, or `F` to describe your own."*
 
-If the user picks ≥1 of the 5 options: their `title` fields become the leverage point(s); their `commands_leaned_on` lists combine for the install set.
+This is a free-text prompt, NOT `AskUserQuestion`. It counts against the free-text budget so the full Phase 1.5 cost stays inside the 2 AskUserQuestion + 3 free-text envelope without a 6-vs-4 picker-cap mismatch.
 
-If the user picks nothing: nudge once — *"No leverage picked. Defer the assessment, or pick at least one to anchor the plan?"* — and otherwise stall.
+**Parse the user's response:**
+1. Strip whitespace; if the response contains a `:`, treat the whole response as a single token (the `F: <description>` form).
+2. Otherwise split on commas and uppercase each token.
+3. Each token must be one of `A`, `B`, `C`, `D`, `E`, `F` — or the response is a single `F: <description>` token.
+4. **Invalid:** any other letter, mixed letters with `F`, or non-letter input → re-prompt naming the bad token(s).
+5. **Empty:** nudge once — *"No leverage picked. Pick at least one letter (A–E), or F to describe your own."*
+
+**Resolve:**
+- **Bare `F`:** free-text follow-up — *"In your own words, what's the highest-leverage move SPORK can make on this situation? (1 sentence title.)"* The user's reply becomes the leverage point title.
+- **`F: <description>`:** skip the follow-up. `<description>` (trimmed) is the leverage point title directly.
+- **Either F branch then asks:** *"Which of these 12 commands does your leverage point lean on? Comma-separate them, or say `all`, `core`, or list specific ones."* Parse against the 12 canonical names; re-prompt on invalid entries.
+- **One or more of `A`–`E`** (and no `F`): the picked options' `title` fields become the leverage point(s); their `commands_leaned_on` lists combine for the install set.
+- **Letter(s) AND `F` in the same response:** invalid — re-prompt. The user has to commit to picking from the surfaced options OR describing their own, not both.
 
 ### Step 1.5.6 — Record alternatives
 
@@ -267,6 +279,18 @@ Derive the first criterion from `leverage_point_title`:
 For the remaining 3–4 criteria:
 - **If past ADRs/decisions exist:** infer recurring criteria from them. State which ADR each comes from.
 - **If cold:** pick a default rubric from `references/default-rubrics.md` matched to the leverage point's decision shape (infra / library / architecture / vendor / refactor). The default rubric provides remaining criteria; the leverage anchor is the user's specific first criterion.
+
+**Deal-breakers — digest first, defaults only when digest is silent.** Source deal-breakers in this order:
+
+1. **From `digest.key_constraints`.** Always populated when Phase 1.5 ran. Break the one-sentence value into clause-level bullets (split on `;` and `,`-clauses; one bullet per non-negotiable). These are authoritative — the user already validated them via the picker.
+2. **From `default-rubrics.md`** for the matched decision shape — only fill in classes of constraint the digest left silent (cost / compliance / fab / license / region / etc.). Default-sourced deal-breakers carry an inline `(inferred — confirm or remove)` annotation so the user sees which ones SPORK is guessing at.
+3. **Never** present a default deal-breaker that contradicts the digest. Example: if `key_constraints` says "PCB fabrication is the v0 method", do NOT carry forward a default that disqualifies PCB fab — drop it silently.
+
+**Scope-only-leverage framing.** If the picked leverage point's `commands_leaned_on == {"/scope"}` (i.e. the user picked the scope-check option and nothing else), prefix the rubric proposal with:
+
+> *"Forward-looking rubric — for the eventual investigation if /scope says the candidate is viable. May be re-derived after scope."*
+
+The same framing flows to `plan.md`'s `{{rubric_summary}}` (see `plan-template.md` § scope-only case).
 
 Surface the proposed rubric block (criteria with weights summing to 100, deal-breakers, scoring anchors). Use novice-friendly surface headers: "Deal-breakers" not "Disqualifiers", "Scoring sheet" not "Rubric".
 

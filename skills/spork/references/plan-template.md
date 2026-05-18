@@ -97,6 +97,18 @@ Example for the `acme-search-api` scenario:
    - Compares all three spikes; produces `RECOMMENDATION.md`.
 ```
 
+**Conditional steps.** When an earlier step in `{{this_week_invocations}}` is a yes/no decision gate (most often `/scope`), gate every step downstream of it with `*(Only if <prior step> passes.)*` as a parenthetical sub-line beneath the entry. The convention is parenthetical-only — it doesn't introduce a new template slot; SPORK renders the gate inline when the sequencing logic calls for it. Example:
+
+```markdown
+1. `/scope embedded-mesh-protocol on our 8051-class MCUs`
+   - Decides if the question is even tractable on the chosen hardware.
+   - **Next:** if /scope says yes, run `/spike-init`; if no, stop and pick a different leverage point.
+2. `/spike-init candidate mesh stacks` *(Only if /scope passes.)*
+   - Locks the rubric for the investigation.
+3. `/spike <candidate>` *(Only if /scope passes.)*
+   - Repeat per candidate.
+```
+
 ### `{{when_you_hit_x_block}}`
 
 Format: bulleted list, one entry per uninstalled command that has a clear pain trigger for THIS situation. Each entry:
@@ -134,6 +146,12 @@ Format: bulleted list of every command installed in this run. One-line blurb per
 Compact table of criteria + weights + deal-breakers, pulled from `RUBRIC.md` if any investigation exists. On first install (no investigation yet), this section instead reads:
 
 > No investigation started yet. Once you run `/spike-init` (see "This week"), the rubric lives at `<spike_root>/<date>-<slug>/RUBRIC.md`. The first criterion will derive from your leverage point: **{{leverage_point_title}}**.
+
+**Scope-only case.** If the picked leverage point's `commands_leaned_on == {"/scope"}` (the user picked the scope-check option alone), prefix the rubric summary with:
+
+> *"Forward-looking — re-derived after /scope passes."*
+
+The rubric itself is still rendered (so the user can see SPORK's first-pass thinking), but the framing makes clear that the investigation rubric will be re-confirmed or re-derived once `/scope` answers the viability question. Mirrors the framing applied at Phase 3 Step 3.1.
 
 ---
 

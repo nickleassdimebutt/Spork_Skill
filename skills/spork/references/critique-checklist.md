@@ -1,6 +1,6 @@
 # Self-critique checklist
 
-After drafting the chosen command files (Phase 4 of the SKILL.md workflow) and **before** showing them to the user, walk through all five questions below. For each, write a one-line verdict in the conversation:
+After drafting the chosen command files (Phase 4 of the SKILL.md workflow) and **before** showing them to the user, walk through all seven questions below. For each, write a one-line verdict in the conversation:
 
 - `Q<n>: PASS — <one-line reason>`, or
 - `Q<n>: WAS WEAK — patched: <what you changed in the drafts>`
@@ -60,6 +60,14 @@ A `WAS WEAK` verdict *must* be followed by an actual edit to the draft templates
 - Anchors are "easy / medium / hard" → rewrite with measurable thresholds.
 - Anchors overlap ("low/medium" both at 1–2 days) → tighten boundaries.
 
+**Verdict format when WAS WEAK.** Name every criterion whose anchors were patched (don't say "anchors patched" generically), plus a one-line before/after for the *most-changed* criterion so the user sees the delta before the approval gate. Format:
+
+```
+Q5: WAS WEAK — patched anchors on criteria <c1>, <c2>, <c3> (was N vague endpoints; now M measurable thresholds each). Before: <most-changed criterion> "<old anchors>". After: "<new anchors>".
+```
+
+This exists because Cycle 1a surfaced that a silent rubric patch between user-accept and approval-gate felt like SPORK changing the rules behind the user's back. Naming patched criteria + the most-changed delta makes the change visible.
+
 ## Q6 — Leverage anchor in rubric (mechanical substring check)
 
 > Does at least one criterion's name in the proposed `RUBRIC.md` (or its rendered first-criterion field from `{{leverage_anchor_criterion}}`) contain a substring of the picked leverage point's title?
@@ -89,7 +97,7 @@ Q1 (mechanical comparison): PASS — schema's scoring_per_criterion block guaran
 Q2 (rubric enforceability): WAS WEAK — /spike now checks "# Status: confirmed" before any investigation work. Patched.
 Q3 (idempotent /converge): PASS — RECOMMENDATION.md is overwritten with a "based on N spikes" header.
 Q4 (weak evidence): WAS WEAK — /spike's self_validation_verdict was advisory; now blocks save unless overridden. Patched.
-Q5 (anchor sharpness): WAS WEAK — "dev velocity" anchors went from "easy/medium/hard" to "≤1 day / 1–5 days / >5 days". Patched.
+Q5 (anchor sharpness): WAS WEAK — patched anchors on criteria "dev velocity" and "ops cost" (was 2 vague endpoints; now 3 measurable thresholds each). Before: "dev velocity" anchors were "easy / medium / hard". After: "≤1 day / 1–5 days / >5 days".
 Q6 (leverage anchor in rubric): PASS — first criterion "Search quality on production data" contains substring "search" from leverage point "Pick a vector DB for the search feature".
 Q7 (leverage in plan section 1): PASS — "To deliver on Pick a vector DB for the search feature:" found in plan.md "This week" section.
 

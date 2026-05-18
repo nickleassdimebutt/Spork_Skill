@@ -4,6 +4,8 @@ When discovery finds no prior ADRs/RFCs to infer from (cold repo) or the user ca
 
 All five share the same scoring scale (1–5 with measurable anchors) and the same disqualifier conventions (auto-eliminating constraints that no amount of scoring can overcome).
 
+> **Digest first, defaults only when digest is silent.** SPORK never presents these default disqualifiers wholesale. The authoritative source for deal-breakers is `digest.key_constraints` (always populated when Phase 1.5 ran — the user already validated it via the picker). Defaults below are stand-ins for classes of constraint the digest didn't speak to (cost / compliance / fab / license / region / etc.). Every default that survives into the user-facing rubric carries an inline `(inferred — confirm or remove)` annotation so the user sees which ones SPORK is guessing at. **Never** present a default that contradicts the digest — drop it silently. See `SKILL.md` Phase 3 Step 3.1 for the sourcing order.
+
 ---
 
 ## Rubric A — Infrastructure / platform choice
@@ -20,7 +22,7 @@ Use when: cloud provider, database engine, hosting platform, message broker, run
 | Migration cost     |     15 | One-time cost to adopt, including data/config migration                  |
 | Vendor risk        |     10 | Lock-in, pricing-power risk, EOL/strategy risk                           |
 
-### Disqualifiers
+### Disqualifiers (inferred — confirm or remove)
 
 - Cannot be self-hosted if the project has a hard "no SaaS" constraint.
 - Requires data residency outside permitted regions.
@@ -50,7 +52,7 @@ Use when: which HTTP client, ORM, test framework, UI component library, etc.
 | Coverage of needs  |     20 | Does it solve the actual problem, or 80% of it with the rest custom      |
 | Migration cost     |     15 | If we picked this and were wrong, how hard is it to swap?                |
 
-### Disqualifiers
+### Disqualifiers (inferred — confirm or remove)
 
 - License incompatible with project distribution.
 - Unmaintained (no commits in 18+ months) AND has known security CVEs unpatched.
@@ -80,7 +82,7 @@ Use when: monolith vs services, queue vs stream, sync vs async, REST vs RPC, etc
 | Cognitive load        |     15 | What does a new engineer need to understand to ship safely        |
 | Implementation effort |     15 | Time to first useful version                                      |
 
-### Disqualifiers
+### Disqualifiers (inferred — confirm or remove)
 
 - Cannot meet hard SLA (latency, uptime) requirements.
 - Conflicts with explicit "no microservices / no event sourcing / no shared DB" team constraints.
@@ -110,7 +112,7 @@ Use when: payments, auth, analytics, monitoring, CDN, etc.
 | Integration effort    |     15 | Time to first working call                                        |
 | Compliance fit        |     20 | SOC2, HIPAA, GDPR, regional residency, etc. as required           |
 
-### Disqualifiers
+### Disqualifiers (inferred — confirm or remove)
 
 - Misses required compliance certifications (SOC2, HIPAA, etc.).
 - No SLA, or SLA below the project's hard threshold.
@@ -141,7 +143,7 @@ Use when: a refactor is being scoped, deciding how big a swing to take.
 | Pain solved        |     15 | How much friction does this remove from daily work                       |
 | Stability risk     |     10 | Likelihood of regressions, given test coverage                           |
 
-### Disqualifiers
+### Disqualifiers (inferred — confirm or remove)
 
 - Requires a code freeze the team can't afford.
 - Crosses a team boundary without that team's sign-off.
