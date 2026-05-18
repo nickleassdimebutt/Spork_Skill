@@ -41,7 +41,9 @@ Behavior:
 3. In RUBRIC.md, annotate each criterion's weight with a comment naming the rationale ("`# weight 30 — inferred from ADR-0007 prioritizing ops cost`" or "`# weight 30 — default for library-choice rubric`").
 4. Surface in the approval-gate message: "Using default weights. You can edit `RUBRIC.md` before marking `# Status: confirmed`."
 
-## (d) Discovery overflows the inline threshold
+## (d) Discovery in God Mode / Outer God Mode
+
+### God Mode (default) — inline-overflow gate
 
 Trigger: `len(adr_candidates) + len(spike_candidates) > 10`.
 
@@ -50,6 +52,18 @@ Behavior:
 2. Spawn a single Explore subagent with the prompt: *"Read the most recent 3 ADRs and the 2 most recent spike artifacts in `<target>`. Report (a) recurring decision criteria and their evidence in past ADRs, (b) what hard constraints repeatedly disqualify approaches, (c) the team's reasoning style in 3 bullets. Under 400 words."*
 3. Use the subagent's report to populate the synthesized rubric.
 4. Don't re-read those files inline afterward; trust the subagent.
+
+### Outer God Mode (`--pro-discover`, `--pro`) — always-5 swarm
+
+When `pro_mode_config.discover` is set, SKILL.md Phase 2 skips the `>10` gate above and unconditionally spawns 5 parallel Explore agents:
+
+- **3 subtree agents** — one per top-level subtree in `<target>` (limit to the 3 most code-dense). Each reports recurring decisions / constraints in its subtree.
+- **1 temporal agent** — runs `git log --oneline --all -n 200` plus `git blame` on the 3 hottest files; reports recurring decision sites and churn patterns.
+- **1 decision-archaeology agent** — globs ADRs + RFCs + commit messages + code comments for implicit constraints SPORK's shallow read would miss.
+
+The five agent outputs are collected into a `discovery_synthesis` block per `references/assessment-output-schema.md`. The inline swarm-coordinator (no separate subagent — runs in SKILL.md) collapses the five reports into the standard 5-bullet discovery report, with one addition: contradictory findings across the 5 agents surface as a *"where Explores disagreed"* sub-sidecar at the bottom of the discovery report. Divergence IS the signal — it is not washed out into consensus.
+
+There is no T2 (centroid fallback) for discovery. If one of the 5 agents fails outright, SKILL.md continues with the other 4 and notes the failure in the discovery report. If 3+ fail, SKILL.md falls back to God Mode discovery (T3) for the remainder of the run.
 
 ## (e) Target repo isn't a git repo
 

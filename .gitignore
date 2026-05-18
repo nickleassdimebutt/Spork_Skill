@@ -15,3 +15,7 @@ desktop.ini
 # Test scratch dirs created during sample cycles
 sample-scratch/
 test-repo/
+
+# Python build artifacts (lib/verify_synthesis.py — Pro mode validator)
+__pycache__/
+*.pyc

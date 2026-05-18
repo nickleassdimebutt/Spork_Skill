@@ -125,3 +125,125 @@ The user's answer is parsed against the 12 canonical names; invalid entries surf
 ## Why mechanical-only validation
 
 If we ask "is this output good?" the LLM judges its own work, and quality drifts run-to-run. If we ask "does this output parse and have all required keys?" the answer is deterministic and substring-verifiable. The user — not the LLM — is the quality filter at the picker. Schema enforcement gives the user 5 well-shaped options to react to; their reaction (pick / reject / describe-my-own) is the actual quality signal.
+
+---
+
+## Pro mode — additive schemas (v0.9.1+)
+
+When the user picks any Pro-mode tier at Phase 0.1 (Fire God / Token Gobbler / Outer God / Full Stack), SPORK fans out to 10–25 parallel subagents and then synthesises their outputs. The synthesised output is gated by additional schemas below.
+
+**God Mode schemas above are untouched.** The Pro-mode schemas are additive — pass-1 (digest) and pass-2 (leverage) schemas still apply to the synthesised payload; the Pro-mode extensions wrap them with synthesis metadata + a `citation_map`.
+
+### `citation_map` — required on every Pro-mode synthesis
+
+Every synthesiser / dedup / ranker / devil's-advocate output MUST include a top-level `citation_map` block keyed by output-field name → list of input-agent IDs (`1..N`) that support the field's content. The agent's brief contains the literal rule: *"Every claim in your output must cite at least one input agent. If you cannot cite an input for a claim, do not make the claim."*
+
+```yaml
+citation_map:
+  <output_field_dotted_path>: [<input_agent_id>, <input_agent_id>, ...]
+  # e.g.
+  digest.situation: [1, 3, 7]
+  digest.key_constraints: [2, 4, 5, 8]
+```
+
+Field names may be dotted (`digest.situation`) for nested fields. IDs are 1-indexed against the input-agent list. Validated by `lib/verify_synthesis.py` (existence + Jaccard grounding ≥ 0.3). See `references/pro-mode-recovery.md` § 3 for the policy.
+
+### Pass-1 synthesised schema (`digest_synthesis`, Fire God Mode)
+
+Wraps the 10 raw pass-1 digests with the synthesised digest, critic notes, and citation map:
+
+```yaml
+digest_synthesis:
+  raw_digests:
+    - <digest object>  # exactly 10 entries, each conforming to the pass-1 digest schema
+  synthesized_digest:
+    digest:
+      situation: <string, 1 sentence>
+      goal: <string, 1 sentence>
+      key_constraints: <string, 1 sentence>
+      success_looks_like: <string, 1 sentence>
+  critic_notes:
+    - <string, one sentence per substantive disagreement among the 10 raw digests>
+  citation_map:
+    digest.situation: [<int>, ...]
+    digest.goal: [<int>, ...]
+    digest.key_constraints: [<int>, ...]
+    digest.success_looks_like: [<int>, ...]
+```
+
+Validation:
+- `raw_digests` is a list of exactly 10 items, each itself a valid pass-1 digest.
+- `synthesized_digest.digest` is a valid pass-1 digest (4 keys, 1 sentence each).
+- `critic_notes` is a non-empty list (may have 1 entry if framings broadly agreed) of strings each containing at least one sentence terminator.
+- `citation_map` has entries for all four `digest.*` fields; every cited ID in `[1, 10]`.
+
+### Pass-2 synthesised schema (`leverage_synthesis_metadata`, Token Gobbler Mode)
+
+Wraps the 10 raw pass-2 outputs + dedup + red-team + ranker results with synthesis metadata:
+
+```yaml
+leverage_synthesis_metadata:
+  raw_outputs_count: <int>  # number of pass-2 agents that produced outputs (typically 10)
+  dedup_strategy: <"jaccard_title_overlap" | "centroid_fallback" | "manual">
+  cluster_assignments:
+    "<input_id>.<option_index>": <cluster_id>   # every input option maps to exactly one cluster
+    # e.g. "1.0": 0, "1.1": 2, "2.0": 0, ...
+  disagreements:
+    - <string, one sentence per substantive cluster-level disagreement>
+  red_team_per_option:
+    - cluster_id: <int>
+      objections: [<string>, ...]   # objections raised by the per-option red-team agent
+      citation_map:
+        objections: [<int>, ...]
+  ranker:
+    scores:
+      <cluster_id>: <numeric score>
+    recommended_cluster_id: <int>
+    citation_map:
+      scores: [<int>, ...]
+      recommended_cluster_id: [<int>, ...]
+  devils_advocate:
+    bottom_clusters_argued_for: [<int>, <int>, <int>]   # the 3 lowest-ranked clusters
+    arguments:
+      <cluster_id>: <string, 1-2 sentences>
+    citation_map:
+      arguments: [<int>, ...]
+```
+
+The validated `leverage_options` (5 final entries) are still rendered in the picker exactly as God Mode. Pro mode adds:
+- `cluster_assignments` so `lib/verify_synthesis.py` can confirm no input option was dropped (D4 check).
+- `disagreements` to feed the Phase 1.5.5 "where framings disagreed" sidecar.
+- `red_team_per_option` for the bottom-3 disagreement view.
+- `ranker.scores` so Phase 5 self-critique Q6 can confirm `recommended_index` is `argmax(score)` (R1 check).
+- `devils_advocate.arguments` so the sidecar can surface adversarial pressure inline.
+
+### Discovery synthesised schema (`discovery_synthesis`, Outer God Mode)
+
+Outer God Mode fans out 5 parallel Explore agents instead of inline glob+read. Each agent returns a structured report; the inline swarm-coordinator (in SKILL.md Phase 2) collapses them:
+
+```yaml
+discovery_synthesis:
+  agent_reports:
+    - agent: <"subtree_a" | "subtree_b" | "subtree_c" | "temporal" | "archaeology">
+      summary: <string, ≤400 words>
+      surfaced_constraints: [<string>, ...]   # implicit constraints this agent uncovered
+      surfaced_decisions: [<string>, ...]     # past decisions worth knowing
+  swarm_disagreements:
+    - <string, one sentence per contradiction across agent_reports>
+```
+
+There is no separate citation_map for discovery — the agent_reports themselves are the citations (each constraint / decision belongs to exactly one agent's surface). Validation is structural only (5 reports present, each non-empty); no Jaccard grounding because there's no "consensus" to check — divergence is the product.
+
+### Pro-mode validation entry point
+
+After each synthesis step, SKILL.md invokes:
+
+```
+python skills/spork/lib/verify_synthesis.py verify <synthesis.yaml> <inputs.yaml>
+```
+
+The validator returns JSON `{"ok": <bool>, "errors": [<string>, ...]}`. On `ok: false`, SPORK walks the T1 → T2 → T3 → T4 recovery cascade per `references/pro-mode-recovery.md` § 4.
+
+### Why citation_map + Python validator instead of LLM-as-judge
+
+LLM-as-judge over a synthesis has the same model prior as the synthesiser and is expensive. Citation grounding is mechanical, deterministic, and substring-verifiable. The synthesiser must produce a falsifiable claim (`field X is supported by agents [1, 5, 8]`) and a deterministic check confirms the claim. Hallucinated citations either name out-of-range IDs (caught by existence check) or low-overlap fields (caught by Jaccard grounding). The hard residuals (D2, R2, DA3 — see `pro-mode-recovery.md` § 5) escape token-overlap detection but are surfaced via the picker's sidecar and the user-as-quality-filter mechanism that already worked in God Mode.

@@ -14,13 +14,14 @@ Slots:
 - `{{key_criteria_block}}` — bullet list of top 2–3 rubric criteria + weights (or first-criterion-only note if no investigation exists yet).
 - `{{installed_commands_inline}}` — comma-separated list of installed slash commands.
 - `{{generated_date}}` — `YYYY-MM-DD`.
+- `{{pro_mode_audit_line}}` — one-line audit summary when Pro mode amplifiers fired; empty in God Mode (byte-identical to v0.9.0 output). Same substitution rules as `plan-template.md` § `{{pro_mode_audit_line}}`.
 
 ---
 
 ## Template (verbatim — this is the file written to handoff.md AND printed inline)
 
 ```markdown
-I just ran SPORK on {{target_repo_name}} ({{target_repo_abspath}}) on {{generated_date}}.
+I just ran SPORK on {{target_repo_name}} ({{target_repo_abspath}}) on {{generated_date}}.{{pro_mode_audit_line}}
 
 The leverage point we picked: **{{leverage_point_title}}**
 

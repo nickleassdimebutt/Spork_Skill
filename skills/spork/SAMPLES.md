@@ -339,3 +339,82 @@ Soft-item polish round. Addresses 5 of the 7 known-friction items deferred from 
 - Soak time on real repos remains the gate.
 - Items 1 and 6 are documented-and-accepted; not blockers for 1.0.0.
 - If a soak-time run surfaces new friction, expect a v0.9.2 patch before 1.0.0.
+
+---
+
+## v0.9.2 — 2026-05-18
+
+**Pro mode landed.** Opt-in tiers that burn up to ~25× God Mode tokens to produce dramatically sharper output for production-grade decisions. God Mode (v0.9.0/0.9.1 behaviour) stays the default; the Pro tiers are additive amplifiers gated on `pro_mode_config` flags. The v0.9.1 soft-item polish remains in force; no God Mode behaviour was changed.
+
+### Tiers shipped
+
+| Tier | Adds | Cost (Sonnet) | Wall-clock | Subagents |
+|------|------|---------------|------------|-----------|
+| God Mode (default) | — | $0.10-$0.20 | ~30 s | ~2 |
+| Outer God Mode (`--pro-discover`) | always-on Phase 2 Explore swarm | $0.35-$0.70 | ~1-2 min | ~7 |
+| Fire God Mode (`--pro-pass1`) | 10 parallel pass-1 framings + synthesiser + critic | $0.70-$1.40 | ~2-4 min | ~14 |
+| Token Gobbler Mode (`--pro-pass2`) | 10 parallel pass-2 lenses + dedup + per-option red-team + ranker + devil's-advocate | $1.35-$2.70 | ~3-6 min | ~27 |
+| Full Stack (`--pro`) | all three amplifiers | $2.10-$4.20 | ~5-10 min | ~42 |
+
+Mode is the first question posed to the user (`AskUserQuestion` Phase 0.1, combined with the target picker as a single multi-question call). 4-option picker exposes God / Fire God / Token Gobbler / Outer God; Full Stack is `--pro` flag only.
+
+### Phase A — Foundation
+
+- **A.1** NEW `references/pro-mode-recovery.md` — failure-mode taxonomy (S1-S4 pass-1 synthesiser, D1-D4 dedup, R1-R3 ranker, DA1-DA3 devil's-advocate) + T1-T4 recovery cascade (feedback-retry → centroid fallback → God Mode fallback → user escalation).
+- **A.2** NEW `lib/verify_synthesis.py` — Python validator + centroid fallback. Three checks (citation existence, Jaccard grounding ≥ 0.3, dedup integrity) + `centroid_pass1` (Jaccard-centroid pick over 10 digests) + `centroid_pass2` (greedy title-overlap clustering to 5 clusters). Standard library only; Python 3.8+. Needs `python` or `python3` on PATH; if missing, Pro mode falls back to God Mode at run start.
+- **A.3** Extended `references/assessment-output-schema.md` (additive — God Mode schemas untouched) with `digest_synthesis`, `leverage_synthesis_metadata`, `discovery_synthesis`, and `citation_map` requirements on every Pro-mode synthesis.
+- **A.4** Cleaned up the +1 interaction-budget overrun: preamble now reads *"2 AskUserQuestion + 4 free-text in the planning phases (0 → 3)"*. Phase 3.2 rubric edit is now explicitly the 4th free-text prompt; mode-first opt-in keeps AskUserQuestion count at 2 (Phase 0.1 multi-question combines mode + path).
+
+### Phase B — Moves
+
+- **B.1 Fire God Mode (pass-1 amplification).** NEW `references/assessment-digest-framings.md` with 10 framing priors (engineering risk / product value / cost / time-to-ship / reversibility / team capability / compliance / strategic optionality / naïve baseline / adversarial pre-mortem). `assessment-brief.md` pass-1 brief gained the `<framing_prior>` slot + a new "Synthesiser brief" + "Critic brief" section. SKILL.md Phase 1.5.3 gates on `pro_mode_config.pass1` — when set, fans out 10 parallel pass-1 + synthesiser + critic with full T1-T4 cascade.
+- **B.2 Token Gobbler Mode (pass-2 amplification).** NEW `references/assessment-leverage-red-team-brief.md` with 10 pass-2 lenses + dedup brief + per-option red-team brief template + ranker brief + devil's-advocate brief. `assessment-brief.md` pass-2 brief gained the `<lens_prior>` slot. SKILL.md Phase 1.5.4 gates on `pro_mode_config.pass2` — when set, fans out 10 parallel pass-2 → dedup → 10-15 red-team-per-option → ranker → devil's-advocate, each gated by the validator.
+- **B.3 Outer God Mode (discovery swarm).** SKILL.md Phase 2 gates on `pro_mode_config.discover` — when set, unconditionally spawns 5 parallel Explore agents (3 subtree + 1 temporal `git log`/`git blame` + 1 decision-archaeology over ADRs/RFCs/commit messages). The God Mode `>10` overflow gate is preserved for God Mode runs. `references/failure-modes.md` (d) split into God Mode + Outer God Mode subsections.
+
+### Phase C — Integration & UX
+
+- **C.1** Mode-first opt-in dispatcher in Phase 0.1: single `AskUserQuestion` call with two questions (Mode + Target). Q1 maps to `pro_mode_config`; Q2 maps to target path. Phase 0.0 parses `/spork` arg flags (`--pro` / `--pro-pass1` / `--pro-pass2` / `--pro-discover`); when any flag is set, the Mode question is suppressed.
+- **C.2** Disagreement sidecar in Phase 1.5.5: `[expand] Where the framings disagreed` block above the 5 picker options, rendered ONLY when any Pro flag is active. Sidecar adapts to active tier: pass-1 disagreements (Fire God) from `digest_synthesis.critic_notes`, pass-2 cluster diversity (Token Gobbler) from `leverage_synthesis_metadata.disagreements` + devil's-advocate arguments, discovery contradictions (Outer God) from Phase 2's swarm-coordination notes. Read-only; picker still works on 5 letters.
+- **C.3** Plan/handoff template audit lines: `{{pro_mode_audit_line}}` substitutes to `""` in God Mode (byte-identical to v0.9.1 output) or a leading-newline-prefixed `_Mode: ..._` line in Pro tiers. Slot inlined at end of `_Generated <date>._` so no extra blank line appears in God Mode.
+
+### Phase D — Verification
+
+- **D.1 Golden-input synthesis tests.** `lib/test_verify_synthesis.py` covers three scenarios:
+  - (a) 10 pass-1 digests with a fabricated `key_constraints` (none of the 10 mentioned GDPR; synthesis claims it) → validator fires Jaccard-grounding failure. **PASS.**
+  - (b) 50 pass-2 options across 5 known clusters → dedup `cluster_assignments` must cover all 50; dropping option "5.3" (a contrarian) triggers the D4 dedup-integrity error. **PASS.**
+  - (c) Ranker `recommended_cluster_id` doesn't equal `argmax(weighted_total)` → mechanically rejected by the SKILL.md gate. **PASS.**
+- **D.2 Centroid-fallback determinism.** `centroid_pass1` and `centroid_pass2` produce byte-identical output across two calls on the same inputs. **PASS.**
+- **D.6 God Mode regression (inspection).** SKILL.md Phases 1.5.3, 1.5.4, and 2 each branch on `pro_mode_config.{pass1,pass2,discover}`; the `== false` branch preserves the v0.9.1 code path verbatim. `{{pro_mode_audit_line}}` substitutes to `""` in God Mode and inlines at end of `_Generated_._` line so no extra blank line appears. Full end-to-end regression run (real `/spork` against a Cycle 2 fixture, byte-diff against v0.9.1) **deferred to soak time** — no automation yet for `/spork` self-invocation.
+- **D.7 Polish-bar verification.** (a) Pro-mode produces ≥1 meaningfully different leverage option — **deferred** (needs real run). (b) Sidecar surfaces ≥1 substantive disagreement — **deferred** (needs real run). (c) Validator passes on golden inputs — **PASS** (D.1). (d) ≤10 min wall-clock at Full Stack — **deferred** (needs real run; rate-limit behaviour also unknown until tested).
+- **D.8 Residual risks** documented in `references/pro-mode-recovery.md` § 5: D2 (semantic over-merge with high token overlap), R2 (invented tiebreak on close calls), DA3 (fabricated objections in input vocabulary). T4 escape hatch ("show raw") is the user-facing recovery; the `--show-raw` flag is deferred to v0.9.3+.
+
+### Items deferred to v0.9.3+ (no fix planned this round)
+
+- **D.3 Pro-mode cold-repo end-to-end run** on a fresh test fixture.
+- **D.4 Pro-mode warm-repo dogfood** on Spork_Skill itself (would also validate the meta-target soft item Item 1 from v0.9.0).
+- **D.5 Rate-limit + context-window stress test** on Full Stack (25-42 concurrent agents).
+- **Phase 5 critique amplification** — the 7 critique questions fan-out (Question 6 from the design plan; deferred per the plan's "DEFERRED to v0.9.2+" call).
+- **Headless driver / CI integration for Pro mode.**
+- **Cost optimisation passes** (cheaper models for subagents, prompt caching).
+- **`--show-raw` flag.**
+
+### Polish-bar verdict
+
+**Code-complete; user-facing dogfood deferred.** All foundation, moves, integration, and machine-verifiable Phase D checks pass. The three deferred D items (D.3, D.4, D.5) require either a real target repo or a production network call; they're carried as the v0.9.2 soak-time work.
+
+God Mode is unchanged by inspection — the new branching gates default to the v0.9.1 code path. Pro mode adds 4 new reference files + 1 Python library + ~150 lines of new SKILL.md content, all gated. The default `/spork` invocation runs God Mode and renders plan.md/handoff.md byte-identical to v0.9.1 (modulo the `{{pro_mode_audit_line}}` empty substitution at end of the `_Generated_._` line).
+
+### Promoted artifacts
+
+- Skill: `skills/spork/SKILL.md` (`version: 0.9.2`).
+- New refs: `references/pro-mode-recovery.md`, `references/assessment-digest-framings.md`, `references/assessment-leverage-red-team-brief.md`.
+- Library: `lib/verify_synthesis.py`, `lib/test_verify_synthesis.py`.
+- Edited refs: `references/assessment-brief.md`, `references/assessment-output-schema.md`, `references/failure-modes.md`, `references/plan-template.md`, `references/handoff-template.md`.
+- Slash command: `commands/spork.md` (now passes `$ARGUMENTS` through for Pro flag parsing).
+- Tag: `v0.9.2` once committed.
+
+### Path to v1.0.0 (revised)
+
+- Soak time on real repos remains the gate — now broader: God Mode on real repos AND Pro mode dogfood (D.3/D.4) on at least one real run.
+- Pro mode's deferred D items (D.3, D.4, D.5) are the most likely source of v0.9.3 patches.
+- Residual risks (D2, R2, DA3) wait on a user encountering them in practice — `--show-raw` flag ships when there's actual demand.

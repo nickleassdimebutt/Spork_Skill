@@ -13,6 +13,9 @@ The literal text SPORK passes to the subagent for pass 1:
 ```
 You are assessing how a spike → converge decision toolkit ("SPORK") can best support a specific situation. This is PASS 1 — produce a structured digest of the user's situation only. Do NOT enumerate leverage options yet; that's pass 2.
 
+<framing_prior>
+(In God Mode the framing slot is empty — the subagent reads the situation with no specific prior. In Fire God Mode and Full Stack, SPORK substitutes one of the 10 framing priors from `references/assessment-digest-framings.md`. The slot is REQUIRED to be present even if empty.)
+
 Context:
 - Target repo: <target_repo_path>
 - Mode: <"yes-plan" if plan_context is non-empty, else "no-plan">
@@ -80,6 +83,9 @@ The literal text SPORK passes to the subagent for pass 2. The validated pass-1 d
 You are continuing the SPORK assessment. PASS 1 (digest) is complete and validated; here it is:
 
 <digest_yaml>
+
+<lens_prior>
+(In God Mode the lens slot is empty — the subagent surfaces leverage options with no lens prior. In Token Gobbler Mode and Full Stack, SPORK substitutes one of the 10 lens priors from `references/assessment-leverage-red-team-brief.md`. The slot is REQUIRED to be present even if empty.)
 
 PASS 2: produce 5 leverage options + 5–10 alternatives + a recommendation. Return YAML conforming to the leverage schema. NO prose before or after the YAML block.
 
@@ -213,6 +219,114 @@ EXAMPLE B (continuing the weekend-blog-engine scenario from pass 1):
 
 End of pass-2 brief. Emit the YAML now.
 ```
+
+---
+
+---
+
+## Pass 1 — Synthesiser brief (Fire God Mode / Full Stack)
+
+The literal text SPORK passes to the synthesiser subagent in Fire God / Full Stack tiers. The 10 raw pass-1 digests are substituted into `<raw_digests>` (each labelled with its input ID, 1..10).
+
+```
+You are synthesising 10 parallel pass-1 digests of the same situation, each produced with a different framing prior (engineering risk, product value, cost, time-to-ship, reversibility, team capability, compliance, strategic optionality, naïve baseline, adversarial pre-mortem).
+
+Inputs (10 numbered digests):
+
+<raw_digests>
+
+Your job: produce a single synthesised digest that preserves real signal across all 10 framings, and flag substantive disagreements in critic_notes. Return YAML conforming to the digest_synthesis schema. NO prose before or after the YAML block.
+
+Schema:
+
+    digest_synthesis:
+      raw_digests:
+        - <verbatim copy of input 1>
+        - <verbatim copy of input 2>
+        - <repeat — exactly 10 entries>
+      synthesized_digest:
+        digest:
+          situation: <one sentence>
+          goal: <one sentence>
+          key_constraints: <one sentence>
+          success_looks_like: <one sentence>
+      critic_notes:
+        - <one sentence per substantive disagreement — see rule below>
+      citation_map:
+        digest.situation: [<input_id>, ...]
+        digest.goal: [<input_id>, ...]
+        digest.key_constraints: [<input_id>, ...]
+        digest.success_looks_like: [<input_id>, ...]
+
+CRITICAL RULES:
+
+1. Every claim in the synthesised digest must be grounded in at least one input. If you cannot cite an input that supports the claim, do not make the claim. The validator (lib/verify_synthesis.py) will check this with token-overlap (Jaccard ≥ 0.3); fabricated content fails the check and triggers retry.
+
+2. critic_notes is NON-EMPTY. Even if all 10 framings broadly agreed, write at least one entry acknowledging the convergence:
+   "All 10 framings converged on X — no substantive disagreement surfaced."
+   This is so Phase 1.5.5's sidecar never falsely claims unanimity went uncaught.
+
+3. PRESERVE disagreement. If three framings flagged a constraint the other seven missed (or vice-versa), record that in critic_notes. The "where framings disagreed" sidecar is the product of Fire God Mode — don't wash it out into bland consensus.
+
+4. The synthesised digest follows the pass-1 schema: 4 fields, one sentence each, each ending with ".", "?", or "!". Length / shape rules are unchanged.
+
+End of synthesiser brief. Emit the YAML now.
+```
+
+## Pass 1 — Critic brief (Fire God Mode / Full Stack)
+
+Runs after the synthesiser passes the validator. The critic is a SEPARATE agent — its value comes from not being primed by the synthesiser's own output.
+
+```
+You are critiquing a synthesised pass-1 digest against its 10 raw inputs. Your job is detection, not rewriting.
+
+Synthesised digest:
+
+<synthesized_digest>
+
+Raw inputs (10 numbered framings):
+
+<raw_digests>
+
+Your job: identify any synthesiser failure per the S1-S4 taxonomy below. Return YAML. NO prose before or after the YAML block.
+
+S1 — Fabricated constraint: synthesised key_constraints includes a non-negotiable no input claimed.
+S2 — Fabricated success criterion: synthesised success_looks_like invents an observable signal no input proposed.
+S3 — False-consensus claim: critic_notes or synthesis reads "all framings agreed X" when one or more framings disagreed or omitted X.
+S4 — Dropped real signal: a constraint or success criterion that ≥3 input digests share is missing from the synthesis.
+
+Schema:
+
+    critic_verdict: <"clean" | "failures_detected">
+    failures:
+      - code: <"S1" | "S2" | "S3" | "S4">
+        description: <one sentence — what was fabricated / dropped>
+        evidence_inputs: [<input_id>, ...]   # input IDs that support the critique
+      - <repeat — empty list if critic_verdict is "clean">
+
+Validation rules:
+- critic_verdict is exactly one of "clean" or "failures_detected".
+- If verdict is "clean", failures is empty.
+- If verdict is "failures_detected", failures has 1+ entries.
+- Every failure cites at least one input ID via evidence_inputs. Pure assertion ("the synthesis is wrong because I think so") is forbidden.
+
+You do NOT rewrite the synthesis. SPORK's recovery cascade (T1→T2→T3→T4) handles that if you flag failures.
+
+End of critic brief. Emit the YAML now.
+```
+
+---
+
+## Pass 2 — Synthesis chain (Token Gobbler Mode / Full Stack)
+
+Pass 2 in Token Gobbler / Full Stack tiers fans out to 10 lens-primed agents (briefs above with `<lens_prior>` substituted) and then runs a four-stage synthesis chain: **dedup → red-team-per-option → ranker → devil's-advocate**. The four briefs for this chain live in `references/assessment-leverage-red-team-brief.md`. SKILL.md Phase 1.5.4 walks the chain in order:
+
+1. Dedup ~50 raw options into 10-15 clusters (validator checks D4 — no option dropped).
+2. For each surviving cluster, spawn a red-team agent (per-option objections).
+3. Spawn ranker (secondary rubric: cost / reversibility / time-to-value).
+4. Spawn devil's-advocate (argues for the bottom 3 clusters).
+
+The final picker still shows 5 leverage options (the top 5 clusters); the picker's sidecar shows dedup disagreements + red-team objections + devil's-advocate arguments. Picker UX unchanged from God Mode.
 
 ---
 

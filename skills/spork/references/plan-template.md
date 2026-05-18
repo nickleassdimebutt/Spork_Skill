@@ -13,6 +13,7 @@ Slots SPORK substitutes at write time:
 - `{{rubric_summary}}` — compact restatement of `<investigation>/RUBRIC.md` once any investigation exists; on first install, instructions for how to create one via `/spike-init`.
 - `{{repo_constraints_block}}` — deal-breakers from `CONSTRAINTS.md`.
 - `{{generated_date}}` — `YYYY-MM-DD`.
+- `{{pro_mode_audit_line}}` — one-line audit summary when Pro mode amplifiers fired (e.g. *"_Mode: Fire God Mode (10 pass-1 framings synthesised)_"* or *"_Mode: Full Stack (pass1 + pass2 + discover)_"*). Empty string in God Mode — the rendered plan.md is byte-identical to v0.9.0 output when no Pro tier was used.
 
 ---
 
@@ -21,7 +22,7 @@ Slots SPORK substitutes at write time:
 ```markdown
 # SPORK plan — {{target_repo_name}}
 
-_Generated {{generated_date}}._
+_Generated {{generated_date}}._{{pro_mode_audit_line}}
 
 ## Situation
 
@@ -142,6 +143,23 @@ Format: bulleted list of every command **on disk** in `<target>/.claude/commands
 ```
 
 The on-disk set is the source of truth — it's what the user can actually invoke. A prior run's command stays available; plan.md should reflect that.
+
+### `{{pro_mode_audit_line}}`
+
+Format: a single inline string that EITHER substitutes to the empty string (God Mode — byte-identical to v0.9.0 output) OR substitutes to `"\n_Mode: <human-readable name>_"` (Pro mode — adds one line under the date).
+
+Map `pro_mode_config` to the audit string:
+
+| `pro_mode_config` | Substitution |
+|-------------------|--------------|
+| `{pass1: false, pass2: false, discover: false}` | `""` (empty — God Mode) |
+| `{pass1: true, pass2: false, discover: false}` | `"\n_Mode: Fire God Mode (10 pass-1 framings synthesised)_"` |
+| `{pass1: false, pass2: true, discover: false}` | `"\n_Mode: Token Gobbler Mode (10 pass-2 lenses, dedup + red-team + ranker + devil's-advocate)_"` |
+| `{pass1: false, pass2: false, discover: true}` | `"\n_Mode: Outer God Mode (5 Explore agents on discovery)_"` |
+| `{pass1: true, pass2: true, discover: true}` | `"\n_Mode: Full Stack (pass1 + pass2 + discover)_"` |
+| any other composition | `"\n_Mode: Pro composite (<flag1> + <flag2>)_"` |
+
+The slot's leading `\n` (when populated) gives the audit line its own visual line under the date without forcing a blank line after the date. In God Mode the slot is empty and the rendered output is byte-identical to v0.9.0's plan.md (verified at Phase D.6 regression test).
 
 ### `{{rubric_summary}}`
 

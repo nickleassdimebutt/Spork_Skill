@@ -1,7 +1,7 @@
 ---
 name: spork
-description: SPORK installs a spike → converge decision toolkit into a target repo AND writes a tailored plan + handoff prompt for using it on your specific situation. Asks if you have a prior plan or context; if yes, digests it; if no, assesses the repo. Spawns a Plan subagent (two passes — digest, then leverage options) to surface the 5 highest-leverage, highest-mission-value ways SPORK can improve your success. Installs only the commands the picked leverage point leans on — demand-driven, not tier-picked. Writes .claude/spork/plan.md (a 3-section tiered roadmap anchored on the leverage point) and prints a handoff prompt for a fresh session. Use when the user wants to set up structured decision-making, asks "set up SPORK", "install spike workflow", "add the benchmark command", or has a planning artifact to operationalise. Re-runnable — additional commands install when new leverage points are picked.
-version: 0.9.1
+description: SPORK installs a spike → converge decision toolkit into a target repo AND writes a tailored plan + handoff prompt for using it on your specific situation. Asks if you have a prior plan or context; if yes, digests it; if no, assesses the repo. Spawns a Plan subagent (two passes — digest, then leverage options) to surface the 5 highest-leverage, highest-mission-value ways SPORK can improve your success. Installs only the commands the picked leverage point leans on — demand-driven, not tier-picked. Writes .claude/spork/plan.md (a 3-section tiered roadmap anchored on the leverage point) and prints a handoff prompt for a fresh session. Use when the user wants to set up structured decision-making, asks "set up SPORK", "install spike workflow", "add the benchmark command", or has a planning artifact to operationalise. Re-runnable — additional commands install when new leverage points are picked. Pro mode (`--pro` / `--pro-pass1` / `--pro-pass2` / `--pro-discover` flags, also pickable at the first question) burns up to ~25× tokens for sharper output on hard decisions; default is God Mode (no flags, ~$0.15/run).
+version: 0.9.2
 kind: prose
 ---
 
@@ -9,7 +9,7 @@ kind: prose
 
 You are running the SPORK skill. Your job is twofold: (1) install the subset of SPORK's 12 slash commands the user's situation actually needs, and (2) write a tailored plan + handoff prompt that anchors their next moves on a specific high-leverage decision.
 
-The interaction budget is **2 `AskUserQuestion` calls + 3 free-text prompts** in the planning phases (0 → 1.5). Phase 6's approval-gate `AskUserQuestion` and Phase 7's per-file collision prompts are write-time and counted separately — they're approvals on concrete drafts, not planning input. Stay inside the planning budget. The user has said "doesn't require much of the user" — every prompt skipped when something can be inferred is a win.
+The interaction budget is **2 `AskUserQuestion` calls + 4 free-text prompts** in the planning phases (0 → 3). The 2 AskUserQuestion calls are Phase 0.1 (mode + target, combined as a single multi-question call) and Phase 1.5.1 (prior-plan ask). The 4 free-text prompts are Phase 1.5.2 (paste plan, only on Yes branch), Phase 1.5.5 (picker; one or two free-text turns depending on whether the F escape is taken), and Phase 3.2 (rubric accept/edit). Phase 6's approval-gate `AskUserQuestion` and Phase 7's per-file collision prompts are write-time and counted separately — they're approvals on concrete drafts, not planning input. Stay inside the planning budget. The user has said "doesn't require much of the user" — every prompt skipped when something can be inferred is a win.
 
 UX tone is locked: novice-accessible, plain English, "you" voice, ≤10-word command blurbs. Framework jargon ("spike", "rubric", "schema", "disqualifier") stays inside reference docs and installed command bodies; surface prompts use plain equivalents ("study", "scoring sheet", "required-fields contract", "deal-breaker").
 
@@ -30,11 +30,52 @@ UX tone is locked: novice-accessible, plain English, "you" voice, ≤10-word com
 
 ## Phase 0 — Preflight
 
-### Step 0.1 — Confirm target repo (`AskUserQuestion` #1)
+### Step 0.0 — Parse `/spork` invocation flags
 
-Always ask. Don't auto-pick the cwd even if it looks like a repo — the cwd is often a parent directory containing multiple sibling repos.
+Before any user-facing question, inspect the `/spork` invocation's arg string for the four Pro-mode flags. Set `pro_mode_config` accordingly:
 
-Question: *"Which repo should SPORK be installed into?"*
+| Flag | Sets |
+|------|------|
+| `--pro` | `{pass1: true, pass2: true, discover: true}` (Full Stack) |
+| `--pro-pass1` | `{pass1: true, pass2: false, discover: false}` (Fire God Mode) |
+| `--pro-pass2` | `{pass1: false, pass2: true, discover: false}` (Token Gobbler Mode) |
+| `--pro-discover` | `{pass1: false, pass2: false, discover: true}` (Outer God Mode) |
+
+Multiple flags compose (e.g. `--pro-pass1 --pro-discover` sets both `pass1` and `discover`).
+
+If ANY Pro flag is set, the Mode question in Step 0.1 is **suppressed** — the user has already picked via flags. SPORK surfaces a one-line confirmation: *"Pro mode flags detected: <flags>. Skipping mode picker."*
+
+If no Pro flags are set, `pro_mode_config` defaults to `{pass1: false, pass2: false, discover: false}` (God Mode) and Step 0.1 asks the user.
+
+**Python toolchain precondition.** If ANY Pro tier is selected (via flags or picker), SPORK first runs `python --version` or `python3 --version`. If neither responds, SPORK falls back to God Mode silently and surfaces *"Pro mode requires Python 3.8+ on PATH; falling back to God Mode."* per `references/pro-mode-recovery.md` § "Toolchain requirement". Pro mode does not run in degraded form — either it has Python or it falls back.
+
+### Step 0.1 — Confirm mode + target repo (`AskUserQuestion` #1, multi-question)
+
+Always ask. Don't auto-pick the cwd even if it looks like a repo — the cwd is often a parent directory containing multiple sibling repos. The mode picker doubles up with the target picker into a **single multi-question `AskUserQuestion` call** so the planning-budget AskUserQuestion count stays at 2 (the second one is Phase 1.5.1).
+
+If Step 0.0 detected Pro flags, **skip the Mode question** and surface only the Target question (still as part of a single `AskUserQuestion` call, just with one question).
+
+**Question 1 — Mode** (only when no Pro flags):
+
+*"Pick a mode. God Mode is the default ~30-second / ~$0.15 run. Pro tiers spend more for sharper output on harder decisions."*
+
+Options:
+- *God Mode (recommended)* — ~$0.15, ~30 s. 2 subagents (digest + leverage). Right for cheap iteration.
+- *Fire God Mode* — ~$0.70-$1.40, ~2-4 min. 14 subagents. Catches first-framing lock-in via 10 parallel pass-1 framings.
+- *Token Gobbler Mode* — ~$1.35-$2.70, ~3-6 min. 27 subagents. Diversity + adversarial pressure via 10 parallel pass-2 lenses + per-option red-team.
+- *Outer God Mode* — ~$0.35-$0.70, ~1-2 min. 7 subagents. Warm-repo discovery swarm.
+
+> Full Stack (~$2.10-$4.20, ~5-10 min, 42 subagents — all three amplifiers) is accessible only via `--pro` flag; the picker is capped at 4 options.
+
+Map each picked option to `pro_mode_config`:
+- God Mode → `{pass1: false, pass2: false, discover: false}`
+- Fire God Mode → `{pass1: true, pass2: false, discover: false}`
+- Token Gobbler Mode → `{pass1: false, pass2: true, discover: false}`
+- Outer God Mode → `{pass1: false, pass2: false, discover: true}`
+
+**Question 2 — Target repo:**
+
+*"Which repo should SPORK be installed into?"*
 
 Options:
 - *Use current directory: `<cwd>`* — only show this option if `<cwd>/.git` exists AND `<cwd>` is not a directory that contains many sibling repos.
@@ -102,33 +143,59 @@ Bundle as `plan_context`. If the user provides nothing meaningful (just whitespa
 
 ### Step 1.5.3 — Pass 1: Digest (Plan subagent)
 
-Spawn a Plan subagent with the **pass-1 portion** of `references/assessment-brief.md` (which includes two worked examples). The subagent returns YAML conforming to the `digest` schema in `references/assessment-output-schema.md`.
+**God Mode (default — `pro_mode_config.pass1 == false`).** Spawn a single Plan subagent with the **pass-1 portion** of `references/assessment-brief.md` (which includes two worked examples). The subagent returns YAML conforming to the `digest` schema in `references/assessment-output-schema.md`. Leave the `<framing_prior>` slot empty.
 
-**Validate mechanically:**
+**Fire God Mode / Full Stack (`pro_mode_config.pass1 == true`).** Spawn **10 parallel pass-1 subagents** in a single batched message, each with one of the 10 framing priors from `references/assessment-digest-framings.md` substituted into the `<framing_prior>` slot. Wait for all 10 outputs.
+
+Then run the synthesis chain:
+1. Spawn the **synthesiser** subagent with the brief in `references/assessment-brief.md` § "Pass 1 — Synthesiser brief". The 10 raw digests are numbered 1..10 in `<raw_digests>`.
+2. Validate the synthesiser output via `python skills/spork/lib/verify_synthesis.py verify <synthesis> <inputs>`. The validator runs three checks (citation existence, Jaccard grounding ≥ 0.3, dedup integrity-skipped-for-pass-1). On failure, walk the T1 → T2 → T3 → T4 recovery cascade in `references/pro-mode-recovery.md` § 4.
+3. On validator pass, spawn the **critic** subagent with the brief in `references/assessment-brief.md` § "Pass 1 — Critic brief". If `critic_verdict == "failures_detected"`, walk T1 (one retry with the failure feedback embedded) → T2 → T3.
+
+After the cascade settles, the validated synthesised digest is the pass-1 result. The critic_notes are bundled for the sidecar at Phase 1.5.5.
+
+**Validate mechanically (both modes — same shape requirements):**
 1. YAML parses.
-2. Top-level `digest` key exists, is a mapping.
+2. Top-level `digest` key exists, is a mapping (in Pro mode the synthesised digest at `synthesized_digest.digest` is also checked).
 3. Sub-keys present and non-empty: `situation`, `goal`, `key_constraints`, `success_looks_like`.
 4. Each value is one sentence (no embedded newlines; ends with `.`, `?`, or `!`).
 
-On failure: retry once, appending the specific failure reason to the brief. If second attempt fails, surface the error and offer (a) Skip leverage assessment OR (b) re-prompt for better `plan_context`.
+On failure (God Mode): retry once, appending the specific failure reason to the brief. If second attempt fails, surface the error and offer (a) Skip leverage assessment OR (b) re-prompt for better `plan_context`.
+
+**On T3 fallback (Pro mode):** SPORK runs God Mode's single-agent pass-1 with a one-line banner — *"Pro-mode pass-1 synthesis flagged a reliability issue. Falling back to God Mode."* — and the rest of the run proceeds with the God Mode digest. The other Pro-mode amplifiers (pass-2, discover) are unaffected — they continue running per their own configs.
 
 ### Step 1.5.4 — Pass 2: Leverage options (Plan subagent, fresh)
 
-Spawn a **fresh** Plan subagent (do not re-use pass-1 context) with the **pass-2 portion** of `references/assessment-brief.md`. The validated pass-1 digest YAML is substituted into the pass-2 brief verbatim — the subagent treats it as given.
+**God Mode (default — `pro_mode_config.pass2 == false`).** Spawn a **fresh** Plan subagent (do not re-use pass-1 context) with the **pass-2 portion** of `references/assessment-brief.md`. The validated pass-1 digest YAML is substituted into the pass-2 brief verbatim — the subagent treats it as given. Leave the `<lens_prior>` slot empty.
 
 Returns YAML conforming to the `leverage` schema in `references/assessment-output-schema.md`.
 
-**Validate mechanically (per the schema):**
+**Token Gobbler Mode / Full Stack (`pro_mode_config.pass2 == true`).** Spawn **10 parallel pass-2 subagents** in a single batched message, each with one of the 10 lens priors from `references/assessment-leverage-red-team-brief.md` substituted into the `<lens_prior>` slot. The validated pass-1 digest (whether from God Mode or the Fire God synthesised digest) is substituted into each agent's brief.
+
+Wait for all 10 outputs — each produces 5 leverage_options + 5-10 alternatives + a recommended_index. Total ~50 raw options across the 10 outputs.
+
+Then run the four-stage synthesis chain (briefs in `references/assessment-leverage-red-team-brief.md`):
+
+1. **Dedup.** Spawn the dedup agent with all 10 raw outputs. Returns cluster_assignments mapping every input option to one of 10-15 semantic clusters + a disagreements list. Validate via `python skills/spork/lib/verify_synthesis.py verify <dedup_output> <pass2_inputs>` — checks citation existence, Jaccard grounding ≥ 0.3, and the dedup-integrity check (every input option appears in exactly one cluster). On failure, walk T1 → T2 → T3 → T4 per `references/pro-mode-recovery.md`. On T2, `centroid_pass2` runs deterministically and produces 5 clusters.
+2. **Red-team per option.** For each surviving cluster (typically 10-15 after dedup), spawn a per-option red-team agent with the brief in `references/assessment-leverage-red-team-brief.md` § "Red-team-per-option brief template". Launch all in a single batched message. Each returns 2-4 objections. Validator runs the same checks on each output (objections must be grounded in either a contributing input or a digest constraint — see DA3).
+3. **Ranker.** Spawn the ranker with the deduped clusters + the per-option red-team outputs. Returns scores + recommended_cluster_id. Validator checks `recommended_cluster_id == argmax(weighted_total)` (R1).
+4. **Devil's-advocate.** Spawn the devil's-advocate with the bottom 3 ranked clusters. Returns 1-2 sentence arguments FOR each (cited per DA3 rule). Validator runs citation checks.
+
+Pick the top 5 ranked clusters for the picker. The remaining clusters (typically 5-10) feed into `improvements.md` per Step 1.5.6 — they are surfaced as "additional alternatives" the user can revisit later.
+
+**Validate mechanically (both modes):**
 1. YAML parses.
-2. Exactly 5 `leverage_options`, each with `title` (≤8 words), `rationale` (≥2 sentence-terminators), `commands_leaned_on` (non-empty subset of the 12 canonical names), `first_invocation` (starts with `/`, slash-command name matches an entry in `commands_leaned_on`).
+2. Exactly 5 final `leverage_options` (in Pro mode, these are the top 5 cluster centroids; in God Mode, the raw pass-2 output), each with `title` (≤8 words), `rationale` (≥2 sentence-terminators), `commands_leaned_on` (non-empty subset of the 12 canonical names), `first_invocation` (starts with `/`, slash-command name matches an entry in `commands_leaned_on`).
 3. 5–10 `alternatives`, each with `title` (≤8 words) and `one_line`.
 4. `recommended_index` is an integer 0–4.
 
-On failure: retry pass 2 once. **The pass-1 digest is preserved** — it doesn't get re-rolled. If the retry also fails, surface the error and offer (a) Skip leverage assessment OR (b) describe-my-own (drops directly into the escape-hatch flow).
+On failure (God Mode): retry pass 2 once. **The pass-1 digest is preserved** — it doesn't get re-rolled. If the retry also fails, surface the error and offer (a) Skip leverage assessment OR (b) describe-my-own (drops directly into the escape-hatch flow).
+
+**On T3 fallback (Pro mode):** SPORK runs God Mode's single-agent pass-2 with a one-line banner — *"Pro-mode pass-2 synthesis flagged a reliability issue. Falling back to God Mode."* The ranker and devil's-advocate are skipped (God Mode doesn't have them). Pass-1 and discover amplifiers are unaffected.
 
 ### Step 1.5.5 — Present the picker (free-text numbered-list)
 
-Surface the digest, then the 5 leverage options + escape, then the recommendation. The block below is what the user sees — render it verbatim with slot substitutions:
+Surface the digest, then (in Pro mode only) the **"where framings disagreed" sidecar**, then the 5 leverage options + escape, then the recommendation. The block below is what the user sees — render it verbatim with slot substitutions. The sidecar block is omitted entirely in God Mode.
 
 ```
 ## Where SPORK can have the highest impact for you
@@ -138,6 +205,10 @@ Surface the digest, then the 5 leverage options + escape, then the recommendatio
 - What you're trying to do: <digest.goal>
 - What's non-negotiable: <digest.key_constraints>
 - What success looks like: <digest.success_looks_like>
+
+
+[expand] Where the framings disagreed   <!-- Pro mode only -->
+  <sidecar_block>
 
 
 5 recommended ways (ranked):
@@ -159,6 +230,18 @@ Recommended: start with [<letter corresponding to recommended_index>].
 Pick one or more to commit to. The unpicked options go to
 .claude/spork/improvements.md for future SPORK sessions to revisit.
 ```
+
+**Composing `<sidecar_block>`.** The sidecar's content depends on which Pro tier(s) ran. Compose in this order; omit subsections whose source data wasn't generated:
+
+1. **Pass-1 framing disagreements** (when `pro_mode_config.pass1 == true`). Source: `digest_synthesis.critic_notes`. Render as a bulleted list under heading *"Where the 10 pass-1 framings disagreed:"*. If `critic_notes` is the single line *"All 10 framings converged on X — no substantive disagreement surfaced."*, render the line verbatim under the heading.
+
+2. **Pass-2 cluster diversity** (when `pro_mode_config.pass2 == true`). Source: `leverage_synthesis_metadata.disagreements` + `leverage_synthesis_metadata.devils_advocate.arguments`. Render as a bulleted list under heading *"Where the 10 pass-2 lenses diverged:"* (disagreements), then a sub-heading *"And the strongest case for the 3 options that didn't make the picker:"* (devil's-advocate arguments, one per cluster_id).
+
+3. **Discovery contradictions** (when `pro_mode_config.discover == true`). Source: Phase 2's swarm-coordination notes (`discovery_synthesis.swarm_disagreements`). Render as a bulleted list under heading *"Where the 5 Explore agents disagreed:"*.
+
+Sidecar is **read-only** — the picker still accepts only `A`-`E` letters (or `F` / `F: <description>`). The sidecar's purpose is information; the user can mentally re-weight options based on what disagreed, but the mechanical picker UX is unchanged. To peek at the raw 10 framings / 50 options, the user can free-text *"show raw"* — that counts against the free-text budget and triggers SKILL.md to dump the raw payloads inline. (The `--show-raw` flag for the unconditional dump is deferred to v0.9.2+.)
+
+If `pro_mode_config` is all-false (God Mode), the entire `[expand] Where the framings disagreed` block is omitted — no empty header, no placeholder.
 
 Then prompt the user via free-text:
 
@@ -235,7 +318,9 @@ After Phase 1.5, the following are available for Phase 2 onward:
 
 ---
 
-## Phase 2 — Discover (inline, parallel)
+## Phase 2 — Discover
+
+### God Mode (default — `pro_mode_config.discover == false`) — inline, parallel
 
 Run in a single batched message:
 
@@ -252,7 +337,7 @@ Bash: git -C <target> log --oneline --all -i --grep='spike\|POC\|prototype\|expe
 Bash: git -C <target> branch -a | grep -i 'spike\|POC\|prototype\|experiment'
 ```
 
-**Threshold check:** if `len(adr_candidates) + len(spike_candidates) > 10`, switch to a single Explore subagent per `references/failure-modes.md` (d).
+**Threshold check:** if `len(adr_candidates) + len(spike_candidates) > 10`, switch to a single Explore subagent per `references/failure-modes.md` (d) § "God Mode".
 
 Then `Read`:
 - `CLAUDE.md` if found.
@@ -260,6 +345,27 @@ Then `Read`:
 - 1–2 historical spike docs if found.
 
 Capture: did discovery find an ADR template? (For `{{adr_template_excerpt}}`, only used if `/adr` is in the install set.)
+
+### Outer God Mode / Full Stack (`pro_mode_config.discover == true`) — always-5 Explore swarm
+
+Skip the inline glob+read+threshold flow. Unconditionally spawn 5 parallel Explore subagents in a single batched message:
+
+1. **Subtree agent × 3.** Identify the top-level subtrees of `<target>` (anything that isn't `.git/`, `node_modules/`, `dist/`, `build/`, etc.). Sort by code density (file count, weighted by source-file extensions). Take the top 3. For each, spawn one Explore agent with the prompt:
+   > *"Read `<subtree_path>` in `<target>`. Report (a) recurring decision patterns visible in code structure (architecture, module boundaries, abstraction choices); (b) implicit constraints (deps it leans on, deps it avoids, naming conventions, comment style); (c) anything that looks like a past tradeoff someone made and locked in. Under 400 words."*
+
+   If `<target>` has fewer than 3 subtrees, fall back to fewer agents (1 or 2 subtree agents).
+
+2. **Temporal agent × 1.** Spawn one Explore agent with the prompt:
+   > *"Run `git log --oneline --all -n 200` in `<target>` and `git blame` on the 3 files with the most commits. Report (a) recurring decision sites (files touched repeatedly with substantive changes); (b) churn patterns (what gets rewritten, what stays stable); (c) author patterns (who owns what). Under 400 words."*
+
+3. **Decision-archaeology agent × 1.** Spawn one Explore agent with the prompt:
+   > *"In `<target>`, glob and read: any ADRs (`docs/adr/`, `decisions/`, `rfcs/`), CLAUDE.md, README, the 5 oldest commit messages, and any inline `// REASON:` / `# rationale:` comments. Report implicit constraints SPORK's standard discovery would miss — things that aren't documented as ADRs but are clearly load-bearing. Under 400 words."*
+
+Wait for all 5 outputs. Collect into a `discovery_synthesis` block per `references/assessment-output-schema.md` § "Discovery synthesised schema".
+
+**Inline swarm-coordinator (no separate subagent).** Walk the 5 agent reports and produce the standard 5-bullet discovery report (see "Synthesize a discovery report" below). For any constraint or decision that 2+ agents surfaced, treat as load-bearing. For any constraint that ONE agent surfaced and others contradicted, surface as a `[expand] Where Explores disagreed` sub-sidecar at the bottom of the discovery report (read-only — divergence is the signal).
+
+Failure handling: if 1-2 of the 5 agents fail, continue with the remainder and note the failure in the discovery report. If 3+ fail, fall back to God Mode discovery (T3) and surface the banner *"Outer God Mode discovery degraded; falling back to God Mode discovery."*
 
 ### Synthesize a discovery report
 
@@ -501,6 +607,7 @@ Read `references/plan-template.md` for the template structure. Substitute slots:
 - `{{install_set_block}}` — bulleted list of every command **on disk** in `<target>/.claude/commands/` after this run's writes, with their frontmatter descriptions. The on-disk set = Phase 1's detected installed set ∪ this run's new writes. Source of truth is the disk, not just this run's install-set computation.
 - `{{rubric_summary}}` — compact restatement of the rubric, or instructions to create one via `/spike-init` if no investigation exists yet.
 - `{{repo_constraints_block}}` — deal-breakers.
+- `{{pro_mode_audit_line}}` — per `references/plan-template.md` § `{{pro_mode_audit_line}}`. Maps from `pro_mode_config`: God Mode → `""` (empty); Fire God / Token Gobbler / Outer God / Full Stack → leading-newline-prefixed `_Mode: ..._` line. God Mode renders byte-identical to v0.9.0.
 
 ### Step 8.2 — Mechanical render-time checks (per plan-template.md)
 
@@ -524,6 +631,7 @@ Read `references/handoff-template.md`. Substitute:
 - `{{first_invocation}}` — verbatim copy of the first item from `{{this_week_invocations}}`.
 - `{{installed_commands_inline}}` — comma-separated list of installed commands.
 - `{{deal_breakers_block}}` and `{{key_criteria_block}}` — as defined in `references/handoff-template.md`.
+- `{{pro_mode_audit_line}}` — same substitution as plan.md; God Mode → `""` (empty); Pro tiers → leading-newline-prefixed `_Mode: ..._` line.
 
 Run the mechanical checks from `handoff-template.md` § "Mechanical checks before write".
 
@@ -579,4 +687,8 @@ The no-op acknowledgment is what tells the user the run *intentionally* didn't w
 - `references/schema-template.md` — the locked SCHEMA.md every spike conforms to.
 - `references/default-rubrics.md` — five default rubrics for cold repos (used when no ADRs are found).
 - `references/critique-checklist.md` — the 7 self-critique questions (Q1–Q5 design quality; Q6 + Q7 mechanical substring checks).
-- `references/failure-modes.md` — collision flow, cold repo, criteria-blank, discovery overflow, parent-dir refusal, weights-don't-sum, ADR-template-missing.
+- `references/failure-modes.md` — collision flow, cold repo, criteria-blank, discovery overflow (God + Outer God Mode), parent-dir refusal, weights-don't-sum, ADR-template-missing.
+- `references/pro-mode-recovery.md` — Pro mode (v0.9.1+) failure-mode taxonomy + T1-T4 recovery cascade. Loaded only when any `pro_mode_config` flag is true.
+- `references/assessment-digest-framings.md` — the 10 framing priors for Fire God Mode's pass-1 fan-out.
+- `references/assessment-leverage-red-team-brief.md` — the 10 pass-2 lenses + dedup + ranker + per-option red-team + devil's-advocate briefs for Token Gobbler Mode.
+- `lib/verify_synthesis.py` — Python validator + centroid fallback for Pro mode synthesis. Invoked by SKILL.md after every synthesis step in Pro tiers; needs Python 3.8+ on PATH.
