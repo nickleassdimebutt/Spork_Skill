@@ -246,13 +246,13 @@ Verification re-run against a fresh target (`spork-cycle25-verify`) surfaced a h
 
 ### Verdict
 
-- **READY for v1.0.0 promotion.** All 5 hard polish-bar violations addressed in Cycle 2.5; the runnability rule's edge case patched in Cycle 2.5b after verification surfaced it. Verification grep confirmed: zero `discovered from none` matches; zero `Glob \`none*.md\`` matches; both replacement clauses present; plan.md has no `{{` slots, has the Q7 anchor sentence, has the scope-only forward-looking framing, and has 3× conditional-step `*(Only if /scope passes.)*` markers. The 7 soft items (1, 2, 4, 5, 6, 7, 10) remain as known-friction; can be addressed in a v1.0.x patch or deferred to v2.
+- **READY for v0.9.0 — pre-stable release.** All 5 hard polish-bar violations addressed in Cycle 2.5; the runnability rule's edge case patched in Cycle 2.5b after verification surfaced it. Verification grep confirmed: zero `discovered from none` matches; zero `Glob \`none*.md\`` matches; both replacement clauses present; plan.md has no `{{` slots, has the Q7 anchor sentence, has the scope-only forward-looking framing, and has 3× conditional-step `*(Only if /scope passes.)*` markers. The 7 soft items (1, 2, 4, 5, 6, 7, 10) remain as known-friction; v0.9.0 is the "feature-complete, polish-bar-passing on hard items, awaiting more soak time before v1.0" milestone. v1.0.0 deferred to a future cycle once the 7 soft items are addressed (or judged not to need addressing) and SPORK has been used on a few real (non-throwaway) repos.
 
 ---
 
-## Stable — 2026-05-17
+## v0.9.0 — 2026-05-17
 
-SPORK has shipped its `v1.0.0` release.
+SPORK has reached its `v0.9.0` pre-stable release. Feature-complete; polish-bar passing on hard items; 7 soft items deferred to v0.9.x / v1.0.
 
 ### Cycles run
 
@@ -298,4 +298,10 @@ SPORK has shipped its `v1.0.0` release.
 
 - Skill: `~/.claude/skills/spork/` (synced from `C:\Users\nicho\GitHub\Spork_Skill\skills\spork\`).
 - Slash command: `~/.claude/commands/spork.md`.
-- Tag: `v1.0.0` on the Spork_Skill repo (set by user after verifying this entry).
+- Tag: `v0.9.0` on the Spork_Skill repo.
+
+### Path to v1.0.0
+
+- Soak time: use SPORK on a few real (non-throwaway) repos to confirm the polish bar holds in the wild.
+- Optionally address the 7 soft items above.
+- Once those are clear, bump version 0.9.0 → 1.0.0 and tag v1.0.0.

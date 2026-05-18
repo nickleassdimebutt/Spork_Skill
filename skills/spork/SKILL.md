@@ -1,7 +1,7 @@
 ---
 name: spork
 description: SPORK installs a spike → converge decision toolkit into a target repo AND writes a tailored plan + handoff prompt for using it on your specific situation. Asks if you have a prior plan or context; if yes, digests it; if no, assesses the repo. Spawns a Plan subagent (two passes — digest, then leverage options) to surface the 5 highest-leverage, highest-mission-value ways SPORK can improve your success. Installs only the commands the picked leverage point leans on — demand-driven, not tier-picked. Writes .claude/spork/plan.md (a 3-section tiered roadmap anchored on the leverage point) and prints a handoff prompt for a fresh session. Use when the user wants to set up structured decision-making, asks "set up SPORK", "install spike workflow", "add the benchmark command", or has a planning artifact to operationalise. Re-runnable — additional commands install when new leverage points are picked.
-version: 1.0.0
+version: 0.9.0
 kind: prose
 ---
 
