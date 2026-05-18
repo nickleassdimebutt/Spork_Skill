@@ -20,6 +20,15 @@ model: opus
 
 You are red-teaming an existing spike in {{repo_name}}. Approach: $ARGUMENTS
 
+## When NOT to use this yet
+
+`/red-team` needs a finished spike file (`<investigation>/spikes/<approach-slug>.md`) to operate on. It refuses if:
+- No active investigation exists (no `<spike_root>/<date>-<slug>/` directory yet — run `/spike-init` first).
+- No spike file matches $ARGUMENTS (the corresponding `/spike <approach>` hasn't run yet).
+- The spike has already been red-teamed (a `## Red-Team Findings` section exists).
+
+Reach for `/red-team` when a spike's evidence feels thin or one-sided — when nobody has pushed back on the claims. If you've just finished a single spike and haven't tried a second approach yet, run more spikes first; red-teaming one spike doesn't help you choose between options.
+
 ## Preflight
 
 1. Find the active investigation (most-recently-modified `RUBRIC.md` under `{{spike_root}}`).
@@ -104,6 +113,15 @@ model: opus
 
 You are enumerating candidate approaches for the active spike investigation in {{repo_name}}.
 
+## When NOT to use this yet
+
+`/enumerate` needs a started investigation with a confirmed rubric. It refuses if:
+- No active investigation exists (run `/spike-init` first).
+- `RUBRIC.md` is still in `# Status: draft` (edit it to `# Status: confirmed` first — the rubric is what makes the enumeration's ranking meaningful).
+- A `CANDIDATES.md` already exists in this investigation (delete it manually if you want to re-enumerate).
+
+Reach for `/enumerate` when you suspect the obvious 3 approaches are all you've thought of, or when you want a wider field before committing two weeks to spiking. Skip it when the candidate set is already concrete (e.g. "Pinecone vs Weaviate vs Qdrant" — those are the 3, enumerating won't find a 4th).
+
 ## Preflight
 
 1. Find the active investigation (most-recently-modified `RUBRIC.md` under `{{spike_root}}`).
@@ -186,6 +204,16 @@ model: opus
 
 You are running a microbenchmark for one spike in {{repo_name}}. Approach: $ARGUMENTS
 
+## When NOT to use this yet
+
+`/benchmark` needs a rubric with at least one **measurable criterion** — an anchor that references concrete units (ms, MB, $/mo, ops/sec, build-time-seconds). It refuses if:
+- No active investigation exists.
+- `RUBRIC.md` is still in `# Status: draft`.
+- No criterion in the rubric has a measurable anchor (e.g. rubric is all "ergonomics", "cognitive load", "maintainability" — non-numeric).
+- The spike file for $ARGUMENTS doesn't exist yet.
+
+Reach for `/benchmark` when convergence will hinge on a measurable criterion AND the spike's estimate for that criterion was a guess (the spike's `benchmark_results` field says `not measured`). Skip it when the criterion is fundamentally subjective (no measurement will resolve a "team consensus" criterion).
+
 ## Preflight
 
 1. Find the active investigation; locate `<investigation>/spikes/<slug>.md` for $ARGUMENTS.
@@ -251,6 +279,14 @@ model: sonnet
 ---
 
 You are converting a converged spike investigation into a formal ADR for {{repo_name}}.
+
+## When NOT to use this yet
+
+`/adr` needs a completed convergence. It refuses if:
+- No active investigation has a `RECOMMENDATION.md` file (i.e. `/converge` hasn't run yet).
+- The chosen investigation's recommendation has `verdict: Insufficient evidence` (writing an ADR with no actual decision is worse than not writing one).
+
+Reach for `/adr` once the team has decided and the decision needs to survive past this session — when there's a real audience (other engineers, future-you) who needs the reasoning preserved. Skip it for solo personal-project decisions where there's nobody else to inform.
 
 ## Preflight
 

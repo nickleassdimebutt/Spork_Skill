@@ -1,27 +1,30 @@
 ---
 name: spork
-description: SPORK bootstraps a "spike → converge" decision workflow into a target repo by writing a chosen tier of slash commands to its .claude/commands/. Tier 1 (default) installs /spike-init, /spike, /converge — the locked-rubric mechanical-convergence core. Tier 2 adds /red-team, /enumerate, /benchmark, /adr. Tier 3 adds /scope, /spike-followup, /second-opinion, /scaffold-from-spike, /post-mortem-rubric. Use when the user wants to install spike commands, extend an existing spike install, set up a structured architectural-decision framework, or asks "set up SPORK", "install spike workflow", "add the benchmark command". Discovers the target repo's stack, ADR/RFC patterns, and historical spikes before drafting commands tailored to the team's reasoning style. Re-runnable — extends an existing install without clobbering.
+description: SPORK installs a spike → converge decision toolkit into a target repo AND writes a tailored plan + handoff prompt for using it on your specific situation. Asks if you have a prior plan or context; if yes, digests it; if no, assesses the repo. Spawns a Plan subagent (two passes — digest, then leverage options) to surface the 5 highest-leverage, highest-mission-value ways SPORK can improve your success. Installs only the commands the picked leverage point leans on — demand-driven, not tier-picked. Writes .claude/spork/plan.md (a 3-section tiered roadmap anchored on the leverage point) and prints a handoff prompt for a fresh session. Use when the user wants to set up structured decision-making, asks "set up SPORK", "install spike workflow", "add the benchmark command", or has a planning artifact to operationalise. Re-runnable — additional commands install when new leverage points are picked.
 version: 0.1.0
 kind: prose
 ---
 
-# SPORK — spike/converge workflow installer
+# SPORK — spike → converge workflow installer + planner
 
-You are running the SPORK skill. Your job is to bootstrap (or extend) the spike-workflow installation in a target repo. You produce slash commands tailored to the team's actual reasoning style, gated behind a rubric the user explicitly confirms.
+You are running the SPORK skill. Your job is twofold: (1) install the subset of SPORK's 12 slash commands the user's situation actually needs, and (2) write a tailored plan + handoff prompt that anchors their next moves on a specific high-leverage decision.
 
-The interaction budget is **3 `AskUserQuestion` calls + 1 free-text prompt + per-file collision prompts**. Stay inside that budget. The user has said "doesn't require much of the user" — every prompt you skip when you could have inferred is a win.
+The interaction budget is **3 `AskUserQuestion` calls + 2 free-text prompts + per-file collision prompts**. Stay inside that budget. The user has said "doesn't require much of the user" — every prompt skipped when something can be inferred is a win.
+
+UX tone is locked: novice-accessible, plain English, "you" voice, ≤10-word command blurbs. Framework jargon ("spike", "rubric", "schema", "disqualifier") stays inside reference docs and installed command bodies; surface prompts use plain equivalents ("study", "scoring sheet", "required-fields contract", "deal-breaker").
 
 ## Phases at a glance
 
-1. **Preflight** — confirm target repo (1 AskUserQuestion).
-2. **Detect existing install** — what's already installed.
-3. **Phase 1 — Discover** — read the repo's decision history (parallel, inline).
-4. **Phase 2 — Synthesize** — propose rubric criteria from discovery; confirm with user (1 free-text).
-5. **Phase 3 — Pick tier** — which commands to install (1 AskUserQuestion, multi-select).
-6. **Phase 4 — Draft commands** — substitute slots into templates from `references/commands-tierN.md`.
-7. **Phase 5 — Self-critique** — walk the 5 questions; patch drafts on `WAS WEAK`; surface verdicts.
-8. **Phase 6 — Approval gate** — show drafts; 1 AskUserQuestion for go/edit/abort.
-9. **Phase 7 — Write** — write chosen commands + `spikes/README.md` on first install. Per-file collision prompt if needed.
+1. **Phase 0 — Preflight** — confirm target repo (1 AskUserQuestion).
+2. **Phase 1 — Detect existing install** — what's already installed, including prior `plan.md`.
+3. **Phase 1.5 — Plan check + leverage assessment** — ask whether the user has prior context; Plan subagent runs in two passes (digest, then leverage options) returning structured YAML; user picks one or more leverage points or describes their own. (1 AskUserQuestion + 1 free-text if yes + 1 AskUserQuestion multi-select with escape hatch.)
+4. **Phase 2 — Discover** — read the repo's decision history (parallel, inline), informed by the picked leverage point.
+5. **Phase 3 — Synthesize rubric + confirm** — propose criteria with the leverage point anchored as criterion 1 via the `{{leverage_anchor_criterion}}` slot (1 free-text).
+6. **Phase 4 — Compute install set + draft commands** — install set = union of `commands_leaned_on` across picked leverage options; draft only those command files.
+7. **Phase 5 — Self-critique** — walk all 7 questions; patch drafts on `WAS WEAK`; surface verdicts.
+8. **Phase 6 — Approval gate** — show drafts; 1 AskUserQuestion for go / show one / edit / abort.
+9. **Phase 7 — Write commands** — write only the install-set commands + `spikes/README.md` on first install. Dated `.bak.YYYY-MM-DD` on collisions.
+10. **Phase 8 — Write plan + handoff** — generate `<target>/.claude/spork/plan.md` (3-section tiered roadmap anchored on the leverage point) + `<target>/.claude/spork/handoff.md`, and print the handoff prompt inline.
 
 ---
 
@@ -29,13 +32,14 @@ The interaction budget is **3 `AskUserQuestion` calls + 1 free-text prompt + per
 
 ### Step 0.1 — Confirm target repo (`AskUserQuestion` #1)
 
-Always ask. Don't auto-pick the cwd even if it looks like a repo — the cwd is often the user's `C:\Users\nicho\GitHub\` parent directory and they want to install into a specific child repo.
+Always ask. Don't auto-pick the cwd even if it looks like a repo — the cwd is often a parent directory containing multiple sibling repos.
 
 Question: *"Which repo should SPORK be installed into?"*
 
 Options:
-- *Use current directory: `<cwd>`* — only show this option if `<cwd>/.git` exists AND `<cwd>` is not a directory that contains many sibling repos (i.e. `<cwd>/.git` exists and is meaningful).
+- *Use current directory: `<cwd>`* — only show this option if `<cwd>/.git` exists AND `<cwd>` is not a directory that contains many sibling repos.
 - *Enter a path* — the user types a path.
+- *Abort* — exit without doing anything.
 
 If they choose "Enter a path", collect the path via free-text follow-up.
 
@@ -47,11 +51,11 @@ Validate the target path:
 2. **Must be a git repo** — check for `<target>/.git`. If missing, refuse per `references/failure-modes.md` (e) — tell the user to `git init` first.
 3. **Must not be a parent of many repos** — if globbing `<target>/*/\.git` returns 3+ child repos, refuse per failure modes (f).
 
-If validation fails, re-ask Step 0.1 (does not count against the AskUserQuestion budget — this is the same intent).
+If validation fails, re-ask Step 0.1 (does not count against the AskUserQuestion budget — same intent).
 
-### Step 0.3 — Ensure `.claude/commands/` exists
+### Step 0.3 — Ensure directories exist
 
-If `<target>/.claude/` is missing, create it. If `<target>/.claude/commands/` is missing, create it.
+Create `<target>/.claude/`, `<target>/.claude/commands/`, and `<target>/.claude/spork/` if any are missing.
 
 ---
 
@@ -61,12 +65,149 @@ Glob `<target>/.claude/commands/<name>.md` for each of the twelve command names:
 
 `spike-init, spike, converge, red-team, enumerate, benchmark, adr, scope, spike-followup, second-opinion, scaffold-from-spike, post-mortem-rubric`
 
-Record the set of installed commands. This shapes:
-- The tier-picker default in Phase 3 (don't pre-select what's already there).
-- The collision flow in Phase 7.
-- The user-facing summary you print at the top of Phase 3.
+Record the **installed set**. This shapes:
+- Phase 4's install-set computation (commands already installed don't need re-installing unless their content drifted).
+- Phase 7's collision flow.
 
-If all twelve are already installed, surface: *"All twelve commands are already installed. Re-running SPORK will only offer the collision flow per existing file. Continue?"* Use `AskUserQuestion` only if the user actually wants to refresh — otherwise stop.
+Also check for `<target>/.claude/spork/plan.md` — if it exists, this is a **re-run** against an already-assessed repo, and the *Skip leverage assessment* option in Phase 1.5 becomes meaningful.
+
+If all twelve are already installed AND a `plan.md` exists, surface: *"All twelve commands are installed and a prior leverage plan exists. Re-running SPORK against this target will refresh the plan based on a new leverage point. Continue?"* Use `AskUserQuestion` only if the user actually wants to refresh — otherwise stop.
+
+---
+
+## Phase 1.5 — Plan check + leverage assessment
+
+This phase determines what SPORK is being asked to support. The picked leverage point flows structurally into the rubric (Phase 3 first criterion) and the plan (Phase 8 section 1 anchor). It also determines the install set (Phase 4).
+
+### Step 1.5.1 — Ask about prior plan (`AskUserQuestion` #2)
+
+Question: *"Do you have a plan or context from a prior session that SPORK should work with?"*
+
+Options:
+- *Yes — I'll paste it or point you to a file*
+- *No — start from this repo as-is*
+- *Skip leverage assessment* — proceeds directly to Phase 2, keeping any prior `plan.md`'s leverage point in force. Only meaningful when `<target>/.claude/spork/plan.md` exists.
+
+### Step 1.5.2 — Collect plan info (free-text, only if Yes)
+
+Prompt: *"Paste the handoff prompt, a pointer (file path or URL), or a free-text info dump describing what you're trying to accomplish. Anything you'd hand to a fresh teammate to bring them up to speed."*
+
+Accept any of:
+- A pasted handoff (use as-is).
+- A repo-relative or absolute file path — `Read` it.
+- A URL — fetch via `WebFetch`.
+- A free-text info dump — use as-is.
+
+Bundle as `plan_context`. If the user provides nothing meaningful (just whitespace or "skip"), fall through to the No branch.
+
+### Step 1.5.3 — Pass 1: Digest (Plan subagent)
+
+Spawn a Plan subagent with the **pass-1 portion** of `references/assessment-brief.md` (which includes two worked examples). The subagent returns YAML conforming to the `digest` schema in `references/assessment-output-schema.md`.
+
+**Validate mechanically:**
+1. YAML parses.
+2. Top-level `digest` key exists, is a mapping.
+3. Sub-keys present and non-empty: `situation`, `goal`, `key_constraints`, `success_looks_like`.
+4. Each value is one sentence (no embedded newlines; ends with `.`, `?`, or `!`).
+
+On failure: retry once, appending the specific failure reason to the brief. If second attempt fails, surface the error and offer (a) Skip leverage assessment OR (b) re-prompt for better `plan_context`.
+
+### Step 1.5.4 — Pass 2: Leverage options (Plan subagent, fresh)
+
+Spawn a **fresh** Plan subagent (do not re-use pass-1 context) with the **pass-2 portion** of `references/assessment-brief.md`. The validated pass-1 digest YAML is substituted into the pass-2 brief verbatim — the subagent treats it as given.
+
+Returns YAML conforming to the `leverage` schema in `references/assessment-output-schema.md`.
+
+**Validate mechanically (per the schema):**
+1. YAML parses.
+2. Exactly 5 `leverage_options`, each with `title` (≤8 words), `rationale` (≥2 sentence-terminators), `commands_leaned_on` (non-empty subset of the 12 canonical names), `first_invocation` (starts with `/`, slash-command name matches an entry in `commands_leaned_on`).
+3. 5–10 `alternatives`, each with `title` (≤8 words) and `one_line`.
+4. `recommended_index` is an integer 0–4.
+
+On failure: retry pass 2 once. **The pass-1 digest is preserved** — it doesn't get re-rolled. If the retry also fails, surface the error and offer (a) Skip leverage assessment OR (b) describe-my-own (drops directly into the escape-hatch flow).
+
+### Step 1.5.5 — Present the picker (`AskUserQuestion` #3, multi-select)
+
+Surface the digest, then the 5 leverage options, then the recommendation:
+
+```
+## Where SPORK can have the highest impact for you
+
+(Situation digest)
+- Where you are: <digest.situation>
+- What you're trying to do: <digest.goal>
+- What's non-negotiable: <digest.key_constraints>
+- What success looks like: <digest.success_looks_like>
+
+
+5 recommended ways (ranked):
+
+  [A]  <leverage_options[0].title>
+       <leverage_options[0].rationale>
+       Leans on: <leverage_options[0].commands_leaned_on>
+       Suggested first command: <leverage_options[0].first_invocation>
+
+  [B]  ...
+  [C]  ...
+  [D]  ...
+  [E]  ...
+
+Recommended: start with [<letter corresponding to recommended_index>].
+
+Pick one or more to commit to (multi-select). The unpicked options go to
+.claude/spork/improvements.md for future SPORK sessions to revisit.
+```
+
+Use `AskUserQuestion` with `multiSelect: true`. Options:
+- `[A] <title>`, `[B] <title>`, ..., `[E] <title>` (each with `description` = the option's rationale truncated to ≤120 chars).
+- `None of these fit — let me describe my own` (the **escape hatch**).
+
+If the user picks the escape hatch: free-text prompt — *"In your own words, what's the highest-leverage move SPORK can make on this situation? (1 sentence title.)"* The user's text becomes the leverage point title. Then ask: *"Which of these 12 commands does your leverage point lean on? Comma-separate them, or say `all`, `core`, or list specific ones."* Parse against the 12 canonical names; re-prompt on invalid entries.
+
+If the user picks ≥1 of the 5 options: their `title` fields become the leverage point(s); their `commands_leaned_on` lists combine for the install set.
+
+If the user picks nothing: nudge once — *"No leverage picked. Defer the assessment, or pick at least one to anchor the plan?"* — and otherwise stall.
+
+### Step 1.5.6 — Record alternatives
+
+Write/append to `<target>/.claude/spork/improvements.md`:
+
+```markdown
+## YYYY-MM-DD — <picked leverage point title>
+
+**Picked:** [letter(s) and title(s)]
+
+### Other top-5 options not picked
+
+- [A] <title> — <rationale>
+- [B] <title> — <rationale>
+- ... (only the ones NOT picked)
+
+### Additional alternatives surfaced by the subagent
+
+- <alternatives[0].title> — <alternatives[0].one_line>
+- ...
+
+To re-engage any of these later: re-run `/spork` here and either provide updated plan context, or use the "describe my own" escape hatch and list specifically.
+```
+
+Append-only — do not overwrite prior sections.
+
+### Step 1.5.7 — Skip-leverage branch
+
+If the user chose *Skip leverage assessment* in 1.5.1:
+- Do NOT spawn the subagent.
+- Do NOT write to `improvements.md`.
+- `Read` `<target>/.claude/spork/plan.md` and extract the prior leverage point from its "The leverage point we picked" section.
+- Surface a one-line reminder: *"Continuing with prior leverage point: <title>."*
+- Proceed to Phase 2.
+
+### Bundle for downstream phases
+
+After Phase 1.5, the following are available for Phase 2 onward:
+- `digest` (4-field mapping)
+- `leverage_point_title` (string — picked or user-described)
+- `commands_leaned_on_union` (set of canonical command names)
 
 ---
 
@@ -87,186 +228,165 @@ Bash: git -C <target> log --oneline --all -i --grep='spike\|POC\|prototype\|expe
 Bash: git -C <target> branch -a | grep -i 'spike\|POC\|prototype\|experiment'
 ```
 
-**Threshold check:** if `len(adr_candidates) + len(spike_candidates) > 10`, switch to a single Explore subagent per `references/failure-modes.md` (d). Otherwise stay inline.
+**Threshold check:** if `len(adr_candidates) + len(spike_candidates) > 10`, switch to a single Explore subagent per `references/failure-modes.md` (d).
 
 Then `Read`:
 - `CLAUDE.md` if found.
 - The 2–3 most recently modified ADR/RFC/decision files.
-- 1–2 historical spike docs if found (just to learn vocabulary).
+- 1–2 historical spike docs if found.
 
-Also: did discovery find an ADR template or canonical example? If yes, capture it for `{{adr_template_excerpt}}` (only used if user installs `/adr`).
+Capture: did discovery find an ADR template? (For `{{adr_template_excerpt}}`, only used if `/adr` is in the install set.)
 
 ### Synthesize a 5-bullet discovery report
 
-Write this to the conversation. Match the source-prompt's five investigation tasks:
+Write to chat:
 
 1. **Stack & conventions** — language(s), framework(s), notable CLAUDE.md instructions.
-2. **Decision-making style** — ADRs / RFCs / design docs / informal. If ADRs/RFCs found, characterize the reasoning style in 2–3 sentences (what evidence do they cite, how long are they, who decides).
-3. **Existing evaluation artifacts** — benchmarks, perf tests, cost models found in the repo.
-4. **Recurring hard constraints** — what *disqualifies* approaches in past decisions? (License, language, infra, compliance, deadline.) Bullet list.
-5. **Historical spike patterns** — branches, commits, docs found. What was inconsistent across them that made comparison hard? (This is what SPORK is fixing.)
+2. **Decision-making style** — ADRs / RFCs / design docs / informal. If found, characterise the reasoning style in 2–3 sentences.
+3. **Existing evaluation artifacts** — benchmarks, perf tests, cost models in the repo.
+4. **Recurring deal-breakers** — what disqualified approaches in past decisions? (License, language, infra, compliance, deadline.) Bullet list.
+5. **Historical spike patterns** — branches, commits, docs found. What was inconsistent across them.
 
-If discovery is cold (no ADRs, no spike history, possibly no CLAUDE.md), say so explicitly per `references/failure-modes.md` (b).
+If discovery is cold, say so explicitly per `references/failure-modes.md` (b).
 
 ---
 
-## Phase 3 — Synthesize rubric + Interaction #1 (free-text)
+## Phase 3 — Synthesize rubric + confirm (free-text)
 
-### Step 3.1 — Propose criteria
+### Step 3.1 — Propose criteria with leverage anchor
 
-Based on the discovery report:
+The first criterion in the proposed rubric is ALWAYS derived from the picked leverage point. This goes into the `{{leverage_anchor_criterion}}` slot in the rubric template. Templates without the slot filled fail to render — the leverage point structurally anchors the rubric.
 
-- **If past ADRs/decisions exist:** infer recurring criteria from them. State which ADR each criterion comes from.
-- **If cold or unclear:** pick a default rubric from `references/default-rubrics.md` matched to the question shape. Ask the user one narrow question (free-text): *"What's the rough shape of the decision you'll be making most often? (infra / library / architecture / vendor / refactor — or describe)"*. Match to A/B/C/D/E. Default to C (architecture) if they say "describe".
+Derive the first criterion from `leverage_point_title`:
+- Identify the distinctive token in the title (drop stop words: `the`, `a`, `for`, `to`, `with`, `on`, `of`, `and`, `or`, `pick`, `choose`, `decide`).
+- Compose a criterion name that includes at least one of those tokens — concrete and measurable for this situation. E.g.:
+  - Title: *"Pick a vector DB for the search feature"* → criterion: *"Search quality on our actual data"* (contains `search`).
+  - Title: *"Compare three CI providers"* → criterion: *"CI cost at projected build volume"* (contains `ci`).
+- The criterion needs a weight (typically 25–35, the highest in the rubric — it's the leverage anchor for a reason) and 1–5 anchors with measurable thresholds.
 
-Surface the proposed rubric block — criteria, weights summing to 100, disqualifiers, scoring anchors. Use real anchors with measurable thresholds (not "easy/medium/hard"). See `references/critique-checklist.md` Q5.
+For the remaining 3–4 criteria:
+- **If past ADRs/decisions exist:** infer recurring criteria from them. State which ADR each comes from.
+- **If cold:** pick a default rubric from `references/default-rubrics.md` matched to the leverage point's decision shape (infra / library / architecture / vendor / refactor). The default rubric provides remaining criteria; the leverage anchor is the user's specific first criterion.
 
-### Step 3.2 — Confirm rubric (free-text prompt)
+Surface the proposed rubric block (criteria with weights summing to 100, deal-breakers, scoring anchors). Use novice-friendly surface headers: "Deal-breakers" not "Disqualifiers", "Scoring sheet" not "Rubric".
 
-Ask: *"Edit these weights or say 'accept'. Weights must sum to 100. Disqualifiers and anchors can be edited inline too."*
+### Step 3.2 — Confirm rubric (free-text)
+
+Ask: *"Edit these weights or say 'accept'. Weights must sum to 100. Deal-breakers and anchors can be edited inline too."*
 
 If they edit:
 - Validate weights sum to 100 (±1). If not, handle per `references/failure-modes.md` (g) — offer auto-normalize or re-enter.
-- Apply edits.
-- Re-show the final rubric.
+- If the user removes the leverage anchor criterion entirely, surface: *"Removing the leverage anchor means the rubric won't reflect your stated highest-leverage move — proceed anyway?"* On confirm, mark the rubric as `# leverage-anchor: removed` so downstream checks (Q6) can flag it.
+- Apply edits. Re-show the final rubric.
 
 If they say "accept", proceed.
 
-If they say "I don't know" / "you decide": fall back to the matched default per `references/failure-modes.md` (c). Annotate weights in `RUBRIC.md` comments with the rationale.
+If they say "I don't know" / "you decide": fall back to default per `references/failure-modes.md` (c). Annotate weights in RUBRIC.md comments with the rationale.
 
-The confirmed rubric becomes `{{rubric_criteria_block}}` for templates and `{{rubric_criteria_list}}` (YAML list of criterion keys) for the schema.
-
-The confirmed disqualifiers become `{{repo_constraints_block}}`.
+The confirmed rubric becomes `{{rubric_criteria_block}}` and `{{rubric_criteria_list}}`. Deal-breakers become `{{repo_constraints_block}}`. The leverage-anchor criterion becomes `{{leverage_anchor_criterion}}`.
 
 ---
 
-## Phase 4 — Pick tier + Interaction #2 (`AskUserQuestion` #2)
+## Phase 4 — Compute install set + draft commands
 
-Read `references/build-order.md` if you haven't already. Use its pain-each-solves blurbs verbatim in the picker.
-
-Surface the tier picker as a single `AskUserQuestion` with `multiSelect: true`. Options include:
-
-- All twelve commands as options.
-- For each: `label = /command-name`, `description = <pain solved blurb from build-order.md, ≤120 chars>`.
-
-**Defaults (what's pre-selected):**
-- First install (no commands present): tier 1 (`/spike-init`, `/spike`, `/converge`) pre-selected, tier 2/3 unchecked.
-- Re-install: nothing pre-selected. The picker shows only commands NOT already installed.
-
-(Note: `AskUserQuestion` allows 2–4 options per question. Twelve options exceed that limit. Workaround: instead of one big multi-select, ask THREE multi-select questions — one per tier — back-to-back. Or, equivalently: show all 12 in the chat as a numbered list and use a free-text prompt: *"Reply with the numbers to install (e.g., '1,2,3' for tier 1 only)."* Pick the free-text approach — it keeps the budget at 1 AskUserQuestion call by skipping the picker entirely and using a free-text response instead.)
-
-**Revised Step 4 — free-text picker (not AskUserQuestion):**
-
-Surface this block in chat:
+### Step 4.1 — Compute the install set
 
 ```
-## Pick commands to install
+core = {"/spike-init", "/spike", "/converge"}
+picked_commands = union(leverage_option.commands_leaned_on for each picked leverage option)
+custom_commands = <if escape hatch was used: the user's free-text command list>
 
-Tier 1 — Default (the original three):
-  [1] /spike-init   — locks question/rubric/constraints/schema before any investigation
-  [2] /spike        — investigates one approach within the locked constraints
-  [3] /converge     — disqualifier check → weighted scoring → ranking → RECOMMENDATION.md
-
-Tier 2 — Recommended extensions:
-  [4] /red-team     — adversarial pass on a spike; appends Red-Team Findings
-  [5] /enumerate    — ranked candidate approaches before any /spike runs
-  [6] /benchmark    — runs microbenchmarks for measurable criteria
-  [7] /adr          — converts RECOMMENDATION.md into a proper ADR
-
-Tier 3 — Optional / advanced:
-  [8]  /scope                  — pre-spike triage; may kill the investigation early
-  [9]  /spike-followup         — tightly-scoped follow-up for gaps from /converge
-  [10] /second-opinion         — pass RECOMMENDATION.md to a different model
-  [11] /scaffold-from-spike    — generate implementation skeleton from winning spike
-  [12] /post-mortem-rubric     — months-after retrospective; updates default rubric
-
-Already installed (skipped): <list, if any>
-
-Default selection: <1,2,3 — first install; empty — re-install>
-
-Reply with a comma-separated list of numbers, or "accept defaults".
+install_set = sorted(core ∪ picked_commands ∪ custom_commands)
 ```
 
-Validate the reply; re-ask if malformed. Save the set of chosen command IDs.
+Always include the core three — they're the foundation any spike workflow rests on.
 
-(Budget update: this Phase 4 uses 0 `AskUserQuestion` calls. We now have 2 left — one for collision flow per file in Phase 7, one for final approval in Phase 6. That fits.)
+Print to chat: *"Install set: <install_set, comma-separated>. <N> commands total; <12-N> deferred to plan.md."*
 
----
+### Step 4.2 — Draft only the install-set commands (in memory)
 
-## Phase 5 — Draft commands (inline)
+Load only the relevant template files:
+- If any installed command is in tier 1 (`/spike-init`, `/spike`, `/converge`) → `Read` `references/commands-tier1.md`.
+- If any installed command is in tier 2 (`/red-team`, `/enumerate`, `/benchmark`, `/adr`) → `Read` `references/commands-tier2.md`.
+- If any installed command is in tier 3 (`/scope`, `/spike-followup`, `/second-opinion`, `/scaffold-from-spike`, `/post-mortem-rubric`) → `Read` `references/commands-tier3.md`.
 
-Load the relevant template file(s):
-
-- Any tier-1 commands chosen → `Read` `references/commands-tier1.md`.
-- Any tier-2 commands chosen → `Read` `references/commands-tier2.md`.
-- Any tier-3 commands chosen → `Read` `references/commands-tier3.md`.
-
-For each chosen command, extract its template and substitute slots:
+For each command in `install_set`, extract its template and substitute slots:
 
 | Slot                          | Value                                                          |
 |-------------------------------|----------------------------------------------------------------|
-| `{{repo_name}}`               | Basename of target repo path                                   |
-| `{{primary_language}}`        | Discovered language (`polyglot` if mixed)                      |
-| `{{adr_path}}`                | Repo-relative ADR dir (e.g. `docs/adr/`) or `none`             |
-| `{{adr_template_excerpt}}`    | Captured ADR template or empty (forces MADR-lite fallback)     |
-| `{{spike_root}}`              | `spikes/` (or `docs/spikes/` if that dir already exists)       |
-| `{{rubric_criteria_block}}`   | Confirmed criteria + weights + anchors (markdown table)        |
-| `{{rubric_criteria_list}}`    | YAML list of criterion keys, e.g. `[ops_cost, dev_velocity]`   |
-| `{{repo_constraints_block}}`  | Confirmed disqualifiers (markdown bulleted list)               |
-| `{{schema_body}}`             | Verbatim content of `references/schema-template.md`'s SCHEMA.md block, with `{{rubric_criteria_list}}` substituted |
+| `{{repo_name}}`               | Basename of target repo path.                                  |
+| `{{primary_language}}`        | Discovered language (`polyglot` if mixed).                     |
+| `{{adr_path}}`                | Repo-relative ADR dir (e.g. `docs/adr/`) or `none`.            |
+| `{{adr_template_excerpt}}`    | Captured ADR template or empty (forces MADR-lite fallback).    |
+| `{{spike_root}}`              | `spikes/` (or `docs/spikes/` if that dir already exists).      |
+| `{{rubric_criteria_block}}`   | Confirmed criteria + weights + anchors (markdown table).       |
+| `{{rubric_criteria_list}}`    | YAML list of criterion keys.                                   |
+| `{{repo_constraints_block}}`  | Confirmed deal-breakers (markdown bulleted list).              |
+| `{{schema_body}}`             | Verbatim `references/schema-template.md`, with `{{rubric_criteria_list}}` substituted. |
+| `{{leverage_anchor_criterion}}` | The first rubric criterion (derived from the leverage point). |
+| `{{leverage_point_title}}`    | The picked leverage point title.                               |
 
-Hold the drafts in memory — do NOT write any file yet.
+Commands NOT in the install set are NOT drafted. They'll be listed in `plan.md`'s deferred sections with re-install instructions.
+
+Hold the drafts in memory.
 
 ---
 
-## Phase 6 — Self-critique
+## Phase 5 — Self-critique
 
-Walk `references/critique-checklist.md` — all five questions. For each:
+Walk `references/critique-checklist.md` — all 7 questions. For each:
 
-1. Examine the relevant draft(s).
+1. Examine the relevant draft(s) and the proposed rubric.
 2. Render a verdict line: `Q<n>: PASS — <reason>` or `Q<n>: WAS WEAK — patched: <what>`.
 3. Any `WAS WEAK` requires an actual edit to the in-memory draft before showing it to the user.
 
-Surface all five verdict lines to the user before the approval gate. This is proof the critique ran.
+**Q6 (leverage anchor in rubric)** and **Q7 (leverage in plan section 1)** are mechanical substring checks. Q7 cannot run yet (no plan.md drafted) — note it as `Q7: DEFERRED — checked at Phase 8 render time.`
+
+Surface all 7 verdict lines to the user before the approval gate.
 
 ---
 
-## Phase 7 — Approval gate (`AskUserQuestion` #2 — first usage)
+## Phase 6 — Approval gate (`AskUserQuestion`)
 
 Show:
 - The discovery report (recap).
+- The picked leverage point + digest (recap).
 - The confirmed rubric (recap).
-- The chosen commands (list).
-- The self-critique verdicts.
-- The full drafts of every chosen command (inline, in code fences). Long but necessary — the user needs to see what's about to land in their repo.
+- The install set (commands about to be written).
+- The self-critique verdicts (7 lines).
+- A **table of contents** of the drafts (command name + 1-line frontmatter description), NOT the full bodies.
 
 Then `AskUserQuestion`:
 
 Question: *"Drafts look good — ready to write?"*
 
 Options:
-- *Write all* — proceed to Phase 8.
-- *Show me the bodies again* — re-surface the drafts (then re-ask).
-- *Let me edit them inline first* — pause; user edits the chat with their requested changes; you apply them to the drafts and re-render. Re-ask.
+- *Write all* — proceed to Phase 7.
+- *Show one draft by name* — re-prompt the user for which command's body to display (free-text); show only that one; re-ask.
+- *Let me edit a draft inline first* — re-prompt for which command + what to change; apply edits; re-render that one; re-ask.
 - *Abort* — stop without writing.
+
+(Cycle 0 friction fix: the original "Show me the bodies again" dumped all chosen drafts. Replaced with a named, on-demand option to avoid scroll fatigue.)
 
 ---
 
-## Phase 8 — Write
+## Phase 7 — Write commands
 
-For each chosen command:
+For each command in the install set:
 
 1. Check if `<target>/.claude/commands/<command>.md` already exists.
-2. **If yes (collision):** `Read` the existing file. Diff against the new draft. `AskUserQuestion` per file:
-   - Question: *"`<command>.md` already exists. What should I do?"*
-   - Options:
-     - *Keep existing — skip this file*
-     - *Overwrite (back up existing to `.bak`)*
-     - *Write to `<command>-v2.md`*
-     - *Abort all remaining writes*
-3. **If no:** write the draft.
+2. **If yes (collision):** `Read` the existing file. Diff against the new draft.
+   - If contents are byte-identical: skip silently (already up to date).
+   - Otherwise `AskUserQuestion` per file:
+     - Question: *"`<command>.md` already exists with different content. What should I do?"*
+     - Options:
+       - *Keep existing — skip this file*
+       - *Overwrite (back up existing to `<command>.md.bak.<YYYY-MM-DD>`)*
+       - *Write to `<command>-v2.md`*
+       - *Abort all remaining writes*
+3. **If no:** `Write` the draft to `<target>/.claude/commands/<command>.md`.
 
-Also write `<target>/spikes/README.md` ONLY on first install (skip if it already exists). Use this content:
+Also write `<target>/spikes/README.md` if it doesn't already exist (first install only):
 
 ```markdown
 # Spikes — structured decision-making
@@ -275,12 +395,12 @@ This directory holds spike investigations, each in its own subdirectory.
 
 ## Workflow
 
-1. `/spike-init <question>` — creates a new investigation directory with question, draft rubric, constraints, schema.
-2. Edit `RUBRIC.md` — adjust weights and anchors. Mark `# Status: confirmed` to enable `/spike`.
-3. `/spike <approach-name>` — investigates one approach. Repeat for each candidate.
-4. `/converge` — produces `RECOMMENDATION.md` with weighted ranking and hybrids.
+1. `/spike-init <question>` — creates a new investigation directory.
+2. Edit `RUBRIC.md` — adjust weights. Change `# Status: draft` to `# Status: confirmed` to enable `/spike`.
+3. `/spike <approach-name>` — studies one approach. Repeat for each candidate.
+4. `/converge` — compares all studies; produces `RECOMMENDATION.md`.
 
-Extensions (if installed): `/enumerate`, `/red-team`, `/benchmark`, `/adr`, `/scope`, `/spike-followup`, `/second-opinion`, `/scaffold-from-spike`, `/post-mortem-rubric`.
+Extensions (install on demand by re-running `/spork`): `/enumerate`, `/red-team`, `/benchmark`, `/adr`, `/scope`, `/spike-followup`, `/second-opinion`, `/scaffold-from-spike`, `/post-mortem-rubric`.
 
 ## Conventions
 
@@ -290,29 +410,95 @@ Extensions (if installed): `/enumerate`, `/red-team`, `/benchmark`, `/adr`, `/sc
 - `/converge` overwrites `RECOMMENDATION.md` idempotently.
 ```
 
-Print a final summary:
-- Commands written (paths).
-- Commands skipped (with reason — collision keep / explicit skip).
-- `.bak` files created (paths).
-- Next step suggestion based on what was installed: if tier 1, suggest `/spike-init "<example question>"`; if just tier 2 additions, suggest the user run the new commands against an existing investigation.
+### Re-run behaviour
+
+On re-runs, the install set may grow (new leverage point pulls in new commands) but never shrinks. Previously-installed commands are left in place unless the user explicitly handles a collision prompt to remove or change them.
+
+---
+
+## Phase 8 — Write plan + handoff
+
+### Step 8.1 — Render plan.md
+
+Read `references/plan-template.md` for the template structure. Substitute slots:
+
+- `{{target_repo_name}}` — basename of the target.
+- `{{generated_date}}` — today, `YYYY-MM-DD`.
+- `{{leverage_point_title}}` — the picked leverage point.
+- `{{digest_situation}}`, `{{digest_goal}}`, `{{digest_key_constraints}}`, `{{digest_success}}` — from the validated pass-1 digest.
+- `{{this_week_invocations}}` — 2–4 numbered concrete invocations using only the install set, anchored on the picked leverage option's `first_invocation`. (See `references/plan-template.md` § "How each block is composed" for the format.)
+- `{{when_you_hit_x_block}}` — bulleted entries, one per UNinstalled command that has a pain trigger applicable here. Each entry: command name + pain trigger from `usage-order.md` + concrete re-install instruction.
+- `{{months_from_now_block}}` — same as above for situational deferred commands.
+- `{{install_set_block}}` — bulleted list of installed commands with their frontmatter descriptions.
+- `{{rubric_summary}}` — compact restatement of the rubric, or instructions to create one via `/spike-init` if no investigation exists yet.
+- `{{repo_constraints_block}}` — deal-breakers.
+
+### Step 8.2 — Mechanical render-time checks (per plan-template.md)
+
+Before writing, verify:
+1. No literal `{{` substrings remain in the rendered output.
+2. The substring `To deliver on <leverage_point_title>: here's the order:` appears verbatim. This is what makes critique-checklist Q7 mechanically passable. Run Q7 at this point — it should PASS now.
+3. `{{install_set_block}}` lists exactly the commands SPORK is about to write (or just wrote in Phase 7) — no skew.
+4. `{{when_you_hit_x_block}}` and `{{months_from_now_block}}` mention only UNinstalled commands.
+
+If any check fails: abort the write, surface the failing check, do not produce a half-rendered plan.
+
+### Step 8.3 — Write plan.md
+
+`Write` to `<target>/.claude/spork/plan.md`.
+
+### Step 8.4 — Render handoff.md
+
+Read `references/handoff-template.md`. Substitute:
+- `{{target_repo_name}}`, `{{target_repo_abspath}}`, `{{generated_date}}`.
+- `{{leverage_point_title}}`.
+- `{{first_invocation}}` — verbatim copy of the first item from `{{this_week_invocations}}`.
+- `{{installed_commands_inline}}` — comma-separated list of installed commands.
+- `{{deal_breakers_block}}` and `{{key_criteria_block}}` — as defined in `references/handoff-template.md`.
+
+Run the mechanical checks from `handoff-template.md` § "Mechanical checks before write".
+
+`Write` to `<target>/.claude/spork/handoff.md`.
+
+### Step 8.5 — Print handoff inline
+
+Output the rendered handoff content verbatim to chat, with a header line:
+
+> **Handoff prompt — paste this into a fresh Claude Code session to pick up here:**
+> ```
+> <rendered handoff content>
+> ```
+
+### Step 8.6 — Final summary
+
+Print:
+- Paths of all artifacts written: `commands/` files, `spikes/README.md` (if first install), `.claude/spork/plan.md`, `.claude/spork/handoff.md`, `.claude/spork/improvements.md`.
+- The first command to run with its example arguments (= `{{first_invocation}}`).
+- Count: *"Installed <N> commands; <12-N> deferred to plan.md."*
+- One-line reminder: *"Re-run `/spork` here with a new leverage point to install additional commands when their pain triggers."*
 
 ---
 
 ## What this skill does NOT do
 
-- **Does not commit or push.** File writes only.
+- **Does not commit or push.** File writes only. The user decides what to commit.
 - **Does not run any installed command.** The user invokes them.
-- **Does not modify files outside `<target>/.claude/commands/` and `<target>/spikes/README.md`.**
-- **Does not auto-wire `/red-team` as a hook.** See `references/failure-modes.md` and the `/red-team` template's note about using the `update-config` skill.
+- **Does not modify files outside `<target>/.claude/commands/`, `<target>/.claude/spork/`, and `<target>/spikes/README.md`.**
+- **Does not auto-wire `/red-team` as a hook.** Hook plumbing belongs in the `update-config` skill.
 - **Does not handle multi-repo installs.** One invocation = one target repo.
-- **Does not auto-update existing commands on re-run.** Existing commands stay unless the collision prompt explicitly overwrites.
-- **Does not uninstall.** `.bak` files cover the most common reversibility need.
+- **Does not shrink the install set on re-runs.** The install set is additive; previously-installed commands stay unless the user explicitly handles a collision.
+- **Does not invent a plan from nothing.** In the No-plan branch the subagent assesses the *repo* and surfaces leverage points based on what the repo seems to be.
+- **Does not silently proceed with no leverage point.** If the user picks nothing at the picker, SPORK nudges once and stalls — it does not default to "general spike workflow".
 
 ## See also
 
-- `references/build-order.md` — the recommended progression and pain-each-solves blurbs.
-- `references/commands-tier1.md`, `references/commands-tier2.md`, `references/commands-tier3.md` — literal templates with `{{}}` slots.
+- `references/usage-order.md` — when each command earns its keep; the source for `commands_leaned_on` mappings and `plan.md`'s "When you hit X" entries.
+- `references/commands-tier1.md`, `commands-tier2.md`, `commands-tier3.md` — literal command templates with `{{}}` slots and "When NOT to use this yet" guards.
+- `references/assessment-brief.md` — the two-pass Plan subagent brief, with worked examples.
+- `references/assessment-output-schema.md` — YAML schema for the subagent's two passes.
+- `references/plan-template.md` — structure of `.claude/spork/plan.md`.
+- `references/handoff-template.md` — structure of `.claude/spork/handoff.md` and the inline-printed handoff.
 - `references/schema-template.md` — the locked SCHEMA.md every spike conforms to.
-- `references/default-rubrics.md` — five default rubrics for cold repos.
-- `references/critique-checklist.md` — the five self-critique questions with worked verdicts.
+- `references/default-rubrics.md` — five default rubrics for cold repos (used when no ADRs are found).
+- `references/critique-checklist.md` — the 7 self-critique questions (Q1–Q5 design quality; Q6 + Q7 mechanical substring checks).
 - `references/failure-modes.md` — collision flow, cold repo, criteria-blank, discovery overflow, parent-dir refusal, weights-don't-sum, ADR-template-missing.

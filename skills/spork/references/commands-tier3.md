@@ -86,6 +86,14 @@ model: opus
 
 You are creating a follow-up investigation for a gap surfaced by a recent `/converge` in {{repo_name}}. Gap: $ARGUMENTS
 
+## When NOT to use this yet
+
+`/spike-followup` is post-convergence — it inherits a parent rubric and adds a focused criterion for a gap. It refuses if:
+- No converged investigation exists in `<spike_root>` (no `RECOMMENDATION.md` files anywhere).
+- The parent investigation's `RECOMMENDATION.md` is `Insufficient evidence to converge` — running more spikes in the parent, not a follow-up, is the right move.
+
+Reach for `/spike-followup` when `/converge` ran cleanly but its "Open questions blocking confidence" section names a question no spike answered. Skip it when the parent recommendation was confident — follow-ups should be rare, not the default.
+
 ## Preflight
 
 1. Find the most-recently-modified investigation under `{{spike_root}}` with a `RECOMMENDATION.md` (i.e. the most recent converged investigation).
@@ -170,6 +178,14 @@ model: opus
 ---
 
 You are getting a second opinion on a converged investigation in {{repo_name}}.
+
+## When NOT to use this yet
+
+`/second-opinion` is post-convergence. It refuses if:
+- No `RECOMMENDATION.md` exists in any investigation.
+- No second-model channel is available (neither `/ask-council` from a consultant plugin nor a configured `claude-api` second model).
+
+Reach for `/second-opinion` when the recommendation feels too clean — when the rubric was tight, the scoring went smoothly, and you suspect Claude anchored on its first framing through every spike. The signal is the *disagreement*, not the agreement. Skip it when convergence was already messy and the open questions are obvious — adding a third opinion to a contested decision rarely helps.
 
 ## Preflight
 
@@ -276,6 +292,17 @@ model: opus
 
 You are scaffolding the initial implementation of the winning spike in {{repo_name}}. Winner: $ARGUMENTS
 
+## When NOT to use this yet
+
+`/scaffold-from-spike` is post-convergence and pre-implementation. It refuses if:
+- No `RECOMMENDATION.md` exists in any investigation (no `/converge` has run).
+- The spike file for $ARGUMENTS doesn't exist in the most-recent converged investigation.
+
+It also **warns** (but proceeds with explicit confirmation) when:
+- $ARGUMENTS isn't the top-ranked spike in `RECOMMENDATION.md`. Scaffolding from a non-winner is sometimes intentional (e.g. hybrid implementation), but it's unusual enough to confirm.
+
+Reach for `/scaffold-from-spike` immediately after `/converge` picks a winner and you're about to start implementation in a new session — the scaffold is the bridge from "we decided" to "we're building". Skip it when the implementation is small enough to write from scratch faster than reviewing scaffolded code.
+
 ## Preflight
 
 1. Find the most-recently-modified investigation under `{{spike_root}}` with a `RECOMMENDATION.md`.
@@ -336,6 +363,20 @@ model: opus
 ---
 
 You are running a post-mortem on a previously-converged investigation in {{repo_name}}. This command runs *months after the implementation ships* — its purpose is to feed back into the team's default rubric so the *next* investigation is sharper.
+
+## When NOT to use this yet
+
+`/post-mortem-rubric` is **time-gated**. It refuses if:
+- No `RECOMMENDATION.md` exists in any investigation.
+- The chosen investigation's `RECOMMENDATION.md` was generated less than **90 days ago** (parse the `Generated <YYYY-MM-DD>` header line). The whole point is months-later lived experience; a 30-day post-mortem can't compare predicted-vs-actual yet.
+
+If RECOMMENDATION.md is less than 90 days old, the command surfaces:
+
+> "This is intended for months-later review. The recommendation was generated <N> days ago (less than 90). The lived experience window is probably too small to meaningfully compare predictions to outcomes. Are you sure you want to proceed?"
+
+Free-text yes/no. Proceed only on explicit "yes". Save the user's reasoning into the post-mortem itself so future readers know it was an early run.
+
+Reach for `/post-mortem-rubric` 3+ months after a `/converge` recommendation has shipped — when there's enough lived experience to score actual outcomes. Skip it for decisions that didn't get implemented or got reversed early.
 
 ## Preflight
 
