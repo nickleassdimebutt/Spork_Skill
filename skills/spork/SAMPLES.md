@@ -238,6 +238,64 @@ Soft friction (improvements but not bar-violating): items 1, 2, 4, 5, 6, 7, 10.
 
 - **Fix #12 (Skip-leverage flow underspec'd for Phases 3-8).** SKILL.md Step 1.5.7: added explicit "Downstream phase semantics in the Skip-leverage branch" section spelling out behavior at Phases 2-8: Phase 3 skipped (reuse prior rubric), Phase 4 install_set = core only, Phase 5 critique still runs, Phase 6 surfaces "no new drafts" and skips the AskUserQuestion, Phase 7 silent skips on all, Phase 8 re-renders plan.md/handoff.md (typically byte-identical → no-op).
 
+### Cycle 2.5b — patch surfaced by verification run
+
+Verification re-run against a fresh target (`spork-cycle25-verify`) surfaced a hole in Fix #8's original wording. The rule listed 6 specific downstream commands as needing prereqs, but `/spike` and `/enumerate` also refuse on a cold repo (they require an active investigation). The pass-2 subagent's option [D] picked `first_invocation: /spike ...` on a cold repo — would have failed at runtime.
+
+`references/assessment-brief.md` pass-2 brief retightened: the rule now reframes positively — *on a cold repo, only `/spike-init` and `/scope` are bootstrap-safe*; every other canonical command requires at least an active investigation. Re-spawning pass-2 with the patched rule produced 5 leverage options all using `/spike-init` or `/scope` for `first_invocation`. Committed at `599768f`.
+
 ### Verdict
 
-- **READY for v1.0.0 promotion.** All 5 hard polish-bar violations addressed in Cycle 2.5. The 7 soft items (1, 2, 4, 5, 6, 7, 10) remain as known-friction; can be addressed in a v1.0.x patch or deferred to v2.
+- **READY for v1.0.0 promotion.** All 5 hard polish-bar violations addressed in Cycle 2.5; the runnability rule's edge case patched in Cycle 2.5b after verification surfaced it. Verification grep confirmed: zero `discovered from none` matches; zero `Glob \`none*.md\`` matches; both replacement clauses present; plan.md has no `{{` slots, has the Q7 anchor sentence, has the scope-only forward-looking framing, and has 3× conditional-step `*(Only if /scope passes.)*` markers. The 7 soft items (1, 2, 4, 5, 6, 7, 10) remain as known-friction; can be addressed in a v1.0.x patch or deferred to v2.
+
+---
+
+## Stable — 2026-05-17
+
+SPORK has shipped its `v1.0.0` release.
+
+### Cycles run
+
+- **Cycle 0** (2026-05-17) — conversational UX rehearsal. Surfaced the major pivot: SPORK is a planning skill, not just an installer. Locked: demand-driven install, two-pass subagent, leverage-point structural anchor, three-section tiered plan.md, "When NOT to use this yet" guards.
+- **Cycle 1a** (2026-05-17) — cold-repo acoustic-levitation rehearsal. Surfaced 5 friction items, all applied: free-text picker (resolved 6-vs-4 cap), Phase 3 digest-first deal-breakers (resolved hobbyist-default contradiction), scope-only-leverage forward-looking framing, Q5 verdict format names patched criteria, conditional-step convention documented. (Cycle 1b skipped — superseded by real Cycle 2.)
+- **Cycle 2** (2026-05-17) — real install + 3 /spork runs against `spork-cycle2-cold-test`. NO-plan + Phase 6 Show-one + picker re-run + Phase 7 collision flow + Skip-leverage all exercised. 12 friction findings; 5 hard polish-bar violations escalated to Cycle 2.5.
+- **Cycle 2.5** (2026-05-17) — addressed all 5 hard items: template ugliness when `adr_path=none` (2 derived slots), subagent forward-looking `first_invocation` rule, `install_set_block` reflects on-disk set, Skip-leverage no-op surface, Skip-leverage flow specification.
+- **Cycle 2.5b** (2026-05-17) — verification re-run surfaced and patched a hole in the runnability rule (was missing `/spike` and `/enumerate`); rule retightened to positively enumerate bootstrap-safe commands.
+
+### Final shape — one-liners
+
+- **Interaction budget:** 2 `AskUserQuestion` + 3 free-text + per-file collision prompts (planning phases). Phase 6/7 write-time prompts counted separately.
+- **Demand-driven install.** Install set = `core ∪ commands_leaned_on(picked_options)`. Re-runs are additive on disk; never shrink.
+- **Two-pass Plan subagent.** Pass 1 = 4-field digest YAML. Pass 2 = leverage options + 5–10 alternatives + recommended_index. Mechanical schema validation; one retry per pass on failure.
+- **Free-text numbered-list picker** at Phase 1.5.5 ([A]–[E] + [F] escape with `F: <description>` shortcut). Avoids the `AskUserQuestion` 4-option cap.
+- **Phase 3 deal-breakers source from digest first**, defaults only fill silent classes, annotated `(inferred — confirm or remove)`, never contradict digest.
+- **Scope-only-leverage** flows forward-looking framing through Phase 3 rubric AND plan.md `{{rubric_summary}}`.
+- **Phase 5 self-critique** walks 7 questions; Q5 WAS WEAK verdicts name patched criteria + most-changed before/after; Q6 + Q7 are mechanical substring checks for leverage anchor.
+- **Phase 6 approval gate** offers Write all / Show one by name / Edit / Abort.
+- **Phase 7 collision flow:** Keep / Overwrite-with-bak.YYYY-MM-DD / Write-v2 / Abort per file. Byte-identical contents silent-skip.
+- **Phase 8 plan.md + handoff.md** render with mechanical checks (no `{{` slots remain, Q7 anchor sentence present, install_set_block matches on-disk, when_you_hit_x_block contains only not-on-disk commands).
+- **Skip-leverage branch** spelled out: Phase 3 skipped, Phase 4 install_set=core only, Phase 7 silent skips, Phase 8.6 emits "No changes — refresh was a no-op" when zero writes occurred.
+- **`adr_path == none`** handled via two derived slots (`{{adr_discovery_clause}}` + `{{scope_adr_scan_step}}`) so rendered files read cleanly.
+- **`first_invocation` rule:** on a cold repo, only `/spike-init` and `/scope` are bootstrap-safe; everything else needs an active investigation.
+
+### Known soft friction (deferred to v1.0.x or v2)
+
+- Meta-target behavior: subagent honestly recognizes throwaway repos as test beds; for real users with no actual product, leverage options become introspective. No polish-bar violation but worth knowing.
+- 5-bullet discovery report on a fully cold repo reads as ceremony (each bullet "nothing found").
+- No `{{primary_language}}` fallback for truly no-code repos; rendered as `unspecified`.
+- 5 default rubrics don't span 0th-order "decide what the repo becomes" leverage points; falls back to Rubric C as least-bad.
+- Budget-line ambiguity ("2 AskUserQuestion + 3 free-text") doesn't explicitly say write-time prompts are separate.
+- Pass-1 digest drifts across no-plan re-runs (subagent reads repo state, which changes between runs).
+- Phase 6 approval gate's full TOC + critique recap feels heavy on re-runs where most files are byte-identical.
+
+### Compounding loop
+
+- New `/spork` runs are additive; install set grows but never shrinks.
+- `improvements.md` accumulates unpicked leverage options across sessions for future re-engagement.
+- `/post-mortem-rubric` (90-day time-gated) feeds back into `default-rubrics.md` so the next investigation starts smarter.
+
+### Promoted artifacts
+
+- Skill: `~/.claude/skills/spork/` (synced from `C:\Users\nicho\GitHub\Spork_Skill\skills\spork\`).
+- Slash command: `~/.claude/commands/spork.md`.
+- Tag: `v1.0.0` on the Spork_Skill repo (set by user after verifying this entry).
