@@ -20,26 +20,37 @@ Re-running `/spork` against the same target lets you pick a new leverage point, 
 
 ## Prepping the input — get a handoff blob from a session that knows the context
 
-SPORK's Phase 1.5.2 wants free-text narrative about your situation; its pass-1 subagent then extracts the 4-field digest (situation / goal / key_constraints / success_looks_like) from it. The cleanest way to get good narrative is to ask the session that already has the context to produce it.
+SPORK converges on **one decision at a time** — its picker surfaces 5 leverage options *for that one decision*, and the resulting `plan.md` is anchored to it. A blob that lists multiple open problems can't be converged on; the prompt below enforces single-decision framing so the responding session doesn't hand you a problem inventory.
 
 Paste this prompt into the work session (or planning chat, or teammate's session) right before you run `/spork` in a fresh session:
 
 ```
-I'm about to run /spork in a fresh session to plan my next moves. Give me a SPORK handoff blob — 200–400 words of plain-English narrative I can paste into Phase 1.5.2 of the run. Cover, in this order, as flowing paragraphs (not bullets):
+I'm about to run /spork in a fresh session to plan my next moves. /spork converges on ONE decision at a time — it surfaces 5 leverage options for that decision and a tiered roadmap anchored to it. A list of problems is unusable input; it has to be one decision.
 
-1. What we're working on. Project name, what state it's in, what just happened or just shipped.
-2. What I'm trying to decide or do next. The actual question on the table. If there are named candidates/options, list them.
-3. What's non-negotiable. Budget, deadline, hard dependencies, compliance, anything that auto-eliminates options.
-4. What success looks like 30 days from now. A concrete observable signal.
-5. What I've already ruled out or tried. So SPORK doesn't re-surface dead ends.
+Give me a SPORK handoff blob — 200–400 words of plain-English narrative I can paste into Phase 1.5.2. Cover, in this order, as flowing paragraphs:
 
-No code samples, no SPORK jargon, no slash commands. Write it like you're briefing a fresh teammate who needs to be useful by lunch. Output the blob as one block I can paste — no preamble, no follow-up questions.
+1. What we're working on. Project name, state, what just shipped. 2–3 sentences of context. Don't list problems here.
+
+2. The ONE decision on the table. If multiple decisions are competing, pick the one with the highest cost-of-being-wrong; mention the others in one line as "also open" so I know what got dropped. State the decision as a single question. If there are named candidates (vendors, libraries, approaches), list them.
+
+3. What's non-negotiable for THIS decision. Budget, deadline, hard dependencies, compliance — only constraints that bound this decision, not the project as a whole.
+
+4. What success would look like 30 days from now — tied to this decision being made well. Concrete observable. Not "the project ships" — "we picked X and recall is within 2% of baseline."
+
+5. What's been considered or ruled out for this decision. Skip if nothing.
+
+End with one sentence in this exact format: "The question: <single question>?"
+
+No code, no SPORK jargon, no slash commands. Output as one block I can paste — no preamble, no follow-up. If you genuinely can't pick (true tie of equal stakes), output just: "Tied decisions: <A>, <B>, <C>. Which one should SPORK study?" and stop.
 ```
+
+**Why these constraints exist:** items 3-5 are scoped to THIS decision (not the project) because SPORK's pass-1 digest has one `key_constraints` field and one `success_looks_like` field — project-wide framing dilutes both. The forced "The question: …?" closer makes the decision substring-checkable so you can eyeball whether the responder actually picked one.
 
 **When to use it:**
 
 - **Fresh `/spork` in a new repo** — paste the prompt into a session that knows the context, then take the blob into the new session.
-- **Continuing a `/spork` plan you have a `handoff.md` from already** — skip this prompt; paste the existing `<target>/.claude/spork/handoff.md` content directly into Phase 1.5.2.
+- **Continuing a `/spork` plan you already have a `handoff.md` for** — skip this prompt; paste the existing `<target>/.claude/spork/handoff.md` content directly into Phase 1.5.2.
+- **You have multiple genuinely-related decisions** (e.g. picking a vector DB *and* the embedding model *and* chunking strategy) — let the responder pick the highest-stakes one as the question, then plan the others as follow-on `/spork` runs OR pick `/scope` as your leverage option to route the bundling explicitly.
 - **Starting cold with no prior session** — skip Phase 1.5.1's "Yes" branch; pick *"No — start from this repo as-is"* and SPORK will read the repo itself.
 
 ## Pro mode (v0.9.2+)
