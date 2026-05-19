@@ -18,6 +18,30 @@ When you invoke `/spork` in a target repo, it:
 
 Re-running `/spork` against the same target lets you pick a new leverage point, which extends the install with additional commands.
 
+## Prepping the input — get a handoff blob from a session that knows the context
+
+SPORK's Phase 1.5.2 wants free-text narrative about your situation; its pass-1 subagent then extracts the 4-field digest (situation / goal / key_constraints / success_looks_like) from it. The cleanest way to get good narrative is to ask the session that already has the context to produce it.
+
+Paste this prompt into the work session (or planning chat, or teammate's session) right before you run `/spork` in a fresh session:
+
+```
+I'm about to run /spork in a fresh session to plan my next moves. Give me a SPORK handoff blob — 200–400 words of plain-English narrative I can paste into Phase 1.5.2 of the run. Cover, in this order, as flowing paragraphs (not bullets):
+
+1. What we're working on. Project name, what state it's in, what just happened or just shipped.
+2. What I'm trying to decide or do next. The actual question on the table. If there are named candidates/options, list them.
+3. What's non-negotiable. Budget, deadline, hard dependencies, compliance, anything that auto-eliminates options.
+4. What success looks like 30 days from now. A concrete observable signal.
+5. What I've already ruled out or tried. So SPORK doesn't re-surface dead ends.
+
+No code samples, no SPORK jargon, no slash commands. Write it like you're briefing a fresh teammate who needs to be useful by lunch. Output the blob as one block I can paste — no preamble, no follow-up questions.
+```
+
+**When to use it:**
+
+- **Fresh `/spork` in a new repo** — paste the prompt into a session that knows the context, then take the blob into the new session.
+- **Continuing a `/spork` plan you have a `handoff.md` from already** — skip this prompt; paste the existing `<target>/.claude/spork/handoff.md` content directly into Phase 1.5.2.
+- **Starting cold with no prior session** — skip Phase 1.5.1's "Yes" branch; pick *"No — start from this repo as-is"* and SPORK will read the repo itself.
+
 ## Pro mode (v0.9.2+)
 
 Opt-in tiers that fan out parallel subagents for sharper output on harder decisions. Pick at the first question, or pass a flag.
